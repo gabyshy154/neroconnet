@@ -1,0 +1,10 @@
+{
+  "description": "Streamlines order entry, membership management, billing, and production tracking for printing shop staff with an efficient, offline-capable interface.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
