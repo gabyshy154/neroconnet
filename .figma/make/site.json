@@ -1,0 +1,10 @@
+{
+  "description": "Streamline management and analytics for Nero Printing Services with a comprehensive dashboard that tracks sales, inventory, employee performance, and profits.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
