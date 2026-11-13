@@ -1,0 +1,10 @@
+{
+  "description": "NeroConnect is a streamlined e-commerce portal for Nero Printing Services, enabling customers to easily browse, customize, and order custom print products online.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

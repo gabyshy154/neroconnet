@@ -1,0 +1,97 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-display: 'Inter', system-ui, sans-serif;
+
+  --color-olive-50: #f0f3eb;
+  --color-olive-100: #dde6d3;
+  --color-olive-200: #c0d4ab;
+  --color-olive-300: #9bba7e;
+  --color-olive-400: #7a9e5a;
+  --color-olive-500: #5b6e42;
+  --color-olive-600: #4a5a35;
+  --color-olive-700: #394629;
+  --color-olive-800: #2b341f;
+  --color-olive-900: #1d2215;
+
+  --color-parchment: #f5f3ee;
+  --color-ink: #1a1918;
+  --color-ink-soft: #3a3835;
+
+  --color-stone-50: #f5f3ee;
+  --color-stone-100: #ede9e0;
+  --color-stone-200: #d5d0c5;
+  --color-stone-300: #bab4a8;
+  --color-stone-400: #9a9489;
+  --color-stone-500: #7a7470;
+  --color-stone-600: #5a5550;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #f5f3ee;
+  color: #1a1918;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d5d0c5;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9a9489;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.rounded-xl,
+.rounded-2xl {
+  border-radius: 0.5rem;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slideInUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 0.4s ease forwards;
+}
