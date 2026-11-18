@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import type { PageId } from '../App'
+import type { PageId, User } from '../App'
+import { MEMBERSHIP_DISCOUNTS, NPC_VALIDITY_MONTHS, generateNpcNumber, generateOrderReference } from '../config'
 
 interface Props {
   navigate: (page: PageId) => void
   isLoggedIn: boolean
-  user: { name: string; email: string } | null
+  user: User | null
+  onSaveNpc: (npc: NonNullable<User['npc']>) => void
 }
 
 type Tier = 'Bronze' | 'Silver' | 'Gold' | 'Platinum'
@@ -14,48 +16,45 @@ const TIERS: { name: Tier; min: number; fee: string; discount: string; color: st
     name: 'Bronze',
     min: 0,
     fee: 'Free',
-    discount: '3% discount',
+    discount: `${MEMBERSHIP_DISCOUNTS.Bronze * 100}% discount`,
     color: '#92400E',
     bg: '#FEF3C7',
     ring: '#D97706',
-    perks: ['3% member discount', '1 point per ₱1,000 spent'],
+    perks: [`${MEMBERSHIP_DISCOUNTS.Bronze * 100}% member discount`, '1 point per ₱1,000 spent'],
   },
   {
     name: 'Silver',
     min: 15,
     fee: '₱50',
-    discount: '5% discount',
+    discount: `${MEMBERSHIP_DISCOUNTS.Silver * 100}% discount`,
     color: '#374151',
     bg: '#F3F4F6',
     ring: '#6B7280',
-    perks: ['5% member discount', '1 point per ₱1,000 spent'],
+    perks: [`${MEMBERSHIP_DISCOUNTS.Silver * 100}% member discount`, '1 point per ₱1,000 spent'],
   },
   {
     name: 'Gold',
     min: 50,
     fee: '₱80',
-    discount: '8% discount',
+    discount: `${MEMBERSHIP_DISCOUNTS.Gold * 100}% discount`,
     color: '#78350F',
     bg: '#FFFBEB',
     ring: '#F59E0B',
-    perks: ['8% member discount', '1 point per ₱1,000 spent'],
+    perks: [`${MEMBERSHIP_DISCOUNTS.Gold * 100}% member discount`, '1 point per ₱1,000 spent'],
   },
   {
     name: 'Platinum',
     min: 150,
     fee: '₱100',
-    discount: '10% discount',
+    discount: `${MEMBERSHIP_DISCOUNTS.Platinum * 100}% discount`,
     color: '#1E3A5F',
     bg: '#EFF6FF',
     ring: '#3B82F6',
-    perks: ['10% member discount', '1 point per ₱1,000 spent'],
+    perks: [`${MEMBERSHIP_DISCOUNTS.Platinum * 100}% member discount`, '1 point per ₱1,000 spent'],
   },
 ]
 
 const MOCK_POINTS = 42
-const MOCK_TIER: Tier = 'Silver'
-const NEXT_TIER = TIERS[TIERS.findIndex((t) => t.name === MOCK_TIER) + 1]
-const CURRENT_TIER_DATA = TIERS.find((t) => t.name === MOCK_TIER)!
 
 function QRCode({ value }: { value: string }) {
   const size = 120
@@ -91,9 +90,15 @@ function QRCode({ value }: { value: string }) {
   )
 }
 
-export default function Loyalty({ navigate, isLoggedIn, user }: Props) {
-  const [enrolled, setEnrolled] = useState(false)
-  const [showEnrollFlow, setShowEnrollFlow] = useState(false)
+function formatDate(date: Date) {
+  return date.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+export default function Loyalty({ navigate, isLoggedIn, user, onSaveNpc }: Props) {
   const [upgradeTier, setUpgradeTier] = useState<Tier | null>(null)
 
   if (!isLoggedIn) {
@@ -115,32 +120,40 @@ export default function Loyalty({ navigate, isLoggedIn, user }: Props) {
     )
   }
 
-  if (!enrolled && !showEnrollFlow) {
+  if (!user?.npc) {
     return (
       <div className="min-h-screen bg-parchment flex items-center justify-center px-6">
-        <div className="max-w-md w-full bg-white border border-stone-200 rounded-2xl p-8 text-center">
+        <div className="max-w-lg w-full bg-white border border-stone-200 rounded-2xl p-8">
           <div className="w-16 h-16 bg-olive-100 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <svg className="w-8 h-8 text-olive-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 6v.75m0 3v.75m0 3v.75m0 3V18m-9-5.25h5.25M7.5 15h3M3.375 5.25c-.621 0-1.125.504-1.125 1.125v3.026a2.999 2.999 0 010 5.198v3.026c0 .621.504 1.125 1.125 1.125h17.25c.621 0 1.125-.504 1.125-1.125v-3.026a2.999 2.999 0 010-5.198V6.375c0-.621-.504-1.125-1.125-1.125H3.375z"/>
             </svg>
           </div>
-          <h2 className="font-display text-2xl font-700 text-ink mb-2">Join NPC</h2>
-          <p className="text-stone-500 mb-2">Nero Privilege Card</p>
-          <p className="text-stone-500 text-sm mb-6 leading-relaxed">
-            Earn 1 point per ₱1,000 spent. Unlock exclusive discounts, priority service, and more as you level up through Bronze → Silver → Gold → Platinum.
+          <h2 className="font-display text-2xl font-700 text-ink mb-2">Join the Nero Privilege Card (NPC)</h2>
+          <p className="text-stone-500 text-sm mb-4 leading-relaxed">
+            Everyone starts at Bronze (free). Earn 1 point per ₱1,000 paid.
           </p>
-          <div className="flex gap-3">
+          <div className="grid grid-cols-2 gap-3 mb-6">
+            {(['Bronze', 'Silver', 'Gold', 'Platinum'] as const).map((tier) => (
+              <div key={tier} className="rounded-lg border border-stone-200 p-4">
+                <p className="font-700 text-ink">{tier}</p>
+                <p className="text-sm text-stone-500">{MEMBERSHIP_DISCOUNTS[tier] * 100}% discount</p>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end">
             <button
-              onClick={() => setShowEnrollFlow(true)}
-              className="flex-1 bg-olive-500 hover:bg-olive-600 text-white font-display font-700 py-3 rounded-xl transition-all"
+              onClick={() => {
+                const today = new Date()
+                onSaveNpc({
+                  number: generateNpcNumber(),
+                  tier: 'Bronze',
+                  enrollmentDate: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
+                })
+              }}
+              className="px-6 bg-olive-500 hover:bg-olive-600 text-white font-display font-700 py-3 rounded-xl transition-all"
             >
-              Yes, Enroll Me
-            </button>
-            <button
-              onClick={() => navigate('home')}
-              className="flex-1 border border-stone-200 text-stone-600 font-600 py-3 rounded-xl hover:border-stone-300 transition-all"
-            >
-              Maybe Later
+              Enroll
             </button>
           </div>
         </div>
@@ -148,39 +161,17 @@ export default function Loyalty({ navigate, isLoggedIn, user }: Props) {
     )
   }
 
-  if (showEnrollFlow) {
-    return (
-      <div className="min-h-screen bg-parchment flex items-center justify-center px-6">
-        <div className="max-w-md w-full bg-white border border-stone-200 rounded-2xl p-8">
-          <h2 className="font-display text-xl font-700 text-ink mb-2">Terms &amp; Conditions</h2>
-          <div className="bg-stone-50 rounded-xl p-4 text-sm text-stone-600 space-y-2 mb-6 max-h-48 overflow-y-auto leading-relaxed">
-            <p>The Nero Privilege Card (NPC) is a membership program by Nero Printing Services and Trading.</p>
-            <p>Points are earned at a rate of 1 point per ₱1,000 spent (exclusive of surcharges).</p>
-            <p>Points have no cash value and cannot be transferred. Tier benefits are reviewed quarterly.</p>
-            <p>Nero reserves the right to modify tier thresholds and benefits with 30-day notice.</p>
-            <p>The NPC QR code is tied to your account and must be presented at the shop's Billing System counter to redeem benefits.</p>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => { setEnrolled(true); setShowEnrollFlow(false) }}
-              className="flex-1 bg-olive-500 hover:bg-olive-600 text-white font-display font-700 py-3 rounded-xl transition-all"
-            >
-              Accept &amp; Enroll
-            </button>
-            <button
-              onClick={() => setShowEnrollFlow(false)}
-              className="flex-1 border border-stone-200 text-stone-600 font-600 py-3 rounded-xl"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const progressToNext = NEXT_TIER ? Math.min(100, ((MOCK_POINTS - CURRENT_TIER_DATA.min) / (NEXT_TIER.min - CURRENT_TIER_DATA.min)) * 100) : 100
-  const memberId = `NPC-2025-${user?.email.slice(0, 4).toUpperCase() ?? 'XXXX'}-0042`
+  const currentTier = user?.npc?.tier ?? 'Bronze'
+  const currentTierData = TIERS.find((tier) => tier.name === currentTier)!
+  const nextTier = TIERS[TIERS.findIndex((tier) => tier.name === currentTier) + 1]
+  const progressToNext = nextTier ? Math.min(100, ((MOCK_POINTS - currentTierData.min) / (nextTier.min - currentTierData.min)) * 100) : 100
+  const memberId = user?.npc?.number ?? ''
+  const npcEnrollmentDate = user?.npc ? new Date(`${user.npc.enrollmentDate}T00:00:00`) : null
+  const npcValidityDate = npcEnrollmentDate ? new Date(npcEnrollmentDate) : null
+  if (npcValidityDate) npcValidityDate.setMonth(npcValidityDate.getMonth() + NPC_VALIDITY_MONTHS)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const npcIsValid = Boolean(npcValidityDate && npcValidityDate >= today)
 
   return (
     <div className="min-h-screen bg-parchment pb-20">
@@ -204,7 +195,7 @@ export default function Loyalty({ navigate, isLoggedIn, user }: Props) {
               <p className="text-olive-200 text-xs font-600 tracking-widest uppercase mb-1">Nero</p>
               <p className="font-display font-800 text-2xl mb-4">Privilege Card · NPC</p>
               <div className="mb-4">
-                <p className="font-display font-800 text-3xl">{MOCK_TIER}</p>
+                <p className="font-display font-800 text-3xl">{currentTier}</p>
                 <p className="text-olive-200 text-xs mt-0.5">Member Tier</p>
               </div>
               <div className="flex justify-between items-end">
@@ -218,6 +209,9 @@ export default function Loyalty({ navigate, isLoggedIn, user }: Props) {
                   <p className="font-display font-800 text-2xl">{MOCK_POINTS}</p>
                 </div>
               </div>
+              <p className="text-olive-200 text-xs mt-3 tabular-nums">
+                {npcIsValid && npcValidityDate ? `Valid until ${formatDate(npcValidityDate)}` : 'Membership expired'}
+              </p>
             </div>
           </div>
 
@@ -257,11 +251,11 @@ export default function Loyalty({ navigate, isLoggedIn, user }: Props) {
         </div>
 
         {/* Progress to next tier */}
-        {NEXT_TIER && (
+        {nextTier && (
           <div className="bg-white border border-stone-200 rounded-2xl p-6">
             <div className="flex justify-between items-center mb-3">
-              <p className="font-display font-700 text-ink">Progress to {NEXT_TIER.name}</p>
-              <p className="text-stone-500 text-sm">{MOCK_POINTS} / {NEXT_TIER.min} pts</p>
+              <p className="font-display font-700 text-ink">Progress to {nextTier.name}</p>
+              <p className="text-stone-500 text-sm">{MOCK_POINTS} / {nextTier.min} pts</p>
             </div>
             <div className="h-2.5 bg-stone-100 rounded-full overflow-hidden">
               <div
@@ -269,7 +263,7 @@ export default function Loyalty({ navigate, isLoggedIn, user }: Props) {
                 style={{ width: `${progressToNext}%` }}
               />
             </div>
-            <p className="text-stone-400 text-xs mt-2">{NEXT_TIER.min - MOCK_POINTS} more points to reach {NEXT_TIER.name}</p>
+            <p className="text-stone-400 text-xs mt-2">{nextTier.min - MOCK_POINTS} more points to reach {nextTier.name}</p>
           </div>
         )}
 
@@ -281,13 +275,13 @@ export default function Loyalty({ navigate, isLoggedIn, user }: Props) {
               <div
                 key={tier.name}
                 className={`rounded-2xl p-5 border-2 transition-all ${
-                  tier.name === MOCK_TIER
+                  tier.name === currentTier
                     ? 'border-olive-500 shadow-md'
                     : 'border-transparent'
                 }`}
                 style={{ backgroundColor: tier.bg }}
               >
-                {tier.name === MOCK_TIER && (
+                {tier.name === currentTier && (
                   <p className="text-olive-600 text-xs font-700 tracking-widest uppercase mb-2">Current Tier</p>
                 )}
                 <div className="w-8 h-2 rounded-full mb-3" style={{ backgroundColor: tier.ring }}/>
@@ -302,7 +296,7 @@ export default function Loyalty({ navigate, isLoggedIn, user }: Props) {
                     </li>
                   ))}
                 </ul>
-                {TIERS.findIndex((item) => item.name === tier.name) > TIERS.findIndex((item) => item.name === MOCK_TIER) && (
+                {TIERS.findIndex((item) => item.name === tier.name) > TIERS.findIndex((item) => item.name === currentTier) && (
                   <button onClick={() => setUpgradeTier(tier.name)} className="mt-4 w-full py-2 rounded-lg bg-white/70 text-xs font-700" style={{ color: tier.color }}>
                     Upgrade to {tier.name}
                   </button>
@@ -332,9 +326,9 @@ export default function Loyalty({ navigate, isLoggedIn, user }: Props) {
           <table className="w-full text-sm">
             <tbody>
               {[
-                { date: 'Jul 18, 2025', desc: 'Order ORD-2025-0041', pts: '+14' },
-                { date: 'Jul 10, 2025', desc: 'Order ORD-2025-0038', pts: '+8' },
-                { date: 'Jun 22, 2025', desc: 'Order ORD-2025-0029', pts: '+4' },
+                { date: 'Jul 18, 2025', desc: `Order ${generateOrderReference(new Date('2025-07-18T00:00:00'), 41)}`, pts: '+14' },
+                { date: 'Jul 10, 2025', desc: `Order ${generateOrderReference(new Date('2025-07-10T00:00:00'), 38)}`, pts: '+8' },
+                { date: 'Jun 22, 2025', desc: `Order ${generateOrderReference(new Date('2025-06-22T00:00:00'), 29)}`, pts: '+4' },
                 { date: 'May 03, 2025', desc: 'Enrollment Bonus', pts: '+10' },
                 { date: 'Apr 15, 2025', desc: 'Order ORD-2025-0012', pts: '+6' },
               ].map((row) => (

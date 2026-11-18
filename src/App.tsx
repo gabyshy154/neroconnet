@@ -11,6 +11,8 @@ import Loyalty from './pages/Loyalty'
 import About from './pages/About'
 import Contact from './pages/Contact'
 import Octavia from './components/Octavia'
+import type { ContactDetails } from './components/ContactDetailsForm'
+import { NPC_MEMBERSHIP } from './config'
 
 export type PageId =
   | 'home' | 'auth' | 'catalog' | 'size-guide' | 'customize'
@@ -28,9 +30,15 @@ export interface QuotationItem {
   subtotal: number
 }
 
-interface User {
+export interface User {
   name: string
   email: string
+  contact?: ContactDetails
+  npc?: {
+    number: string
+    tier: 'Bronze' | 'Silver' | 'Gold' | 'Platinum'
+    enrollmentDate: string
+  }
 }
 
 const NAV_LINKS: { id: PageId; label: string }[] = [
@@ -217,8 +225,10 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  function handleLogin(u: User) {
-    setUser(u)
+  function handleLogin(u: User, seededMember = false) {
+    setUser(seededMember
+      ? { ...u, npc: { number: NPC_MEMBERSHIP.number, tier: NPC_MEMBERSHIP.tier, enrollmentDate: NPC_MEMBERSHIP.enrollmentDate } }
+      : u)
     setIsLoggedIn(true)
   }
 
@@ -226,6 +236,14 @@ export default function App() {
     setUser(null)
     setIsLoggedIn(false)
     navigate('home')
+  }
+
+  function saveContact(contact: ContactDetails) {
+    setUser((prev) => prev ? { ...prev, contact } : prev)
+  }
+
+  function saveNpc(npc: NonNullable<User['npc']>) {
+    setUser((prev) => prev ? { ...prev, npc } : prev)
   }
 
   function addToQuotation(item: QuotationItem) {
@@ -253,15 +271,29 @@ export default function App() {
         {currentPage === 'customize' && (
           <Customize navigate={navigate} addToQuotation={addToQuotation} isLoggedIn={isLoggedIn} />
         )}
-        {currentPage === 'mockup' && <Mockup3D isLoggedIn={isLoggedIn} navigate={navigate} />}
+        {currentPage === 'mockup' && (
+          <Mockup3D
+            isLoggedIn={isLoggedIn}
+            navigate={navigate}
+            user={user}
+            onSaveContact={saveContact}
+            onSaveNpc={saveNpc}
+          />
+        )}
         {currentPage === 'quotation' && (
-          <Quotation navigate={navigate} quotationItems={quotationItems} isLoggedIn={isLoggedIn} />
+          <Quotation
+            navigate={navigate}
+            quotationItems={quotationItems}
+            isLoggedIn={isLoggedIn}
+            user={user}
+            onSaveContact={saveContact}
+          />
         )}
         {currentPage === 'orders' && (
           <OrderTracking navigate={navigate} isLoggedIn={isLoggedIn} />
         )}
         {currentPage === 'loyalty' && (
-          <Loyalty navigate={navigate} isLoggedIn={isLoggedIn} user={user} />
+          <Loyalty navigate={navigate} isLoggedIn={isLoggedIn} user={user} onSaveNpc={saveNpc} />
         )}
         {currentPage === 'about' && <About />}
         {currentPage === 'contact' && <Contact />}

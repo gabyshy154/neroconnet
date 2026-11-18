@@ -68,6 +68,8 @@ export default function Customize({ navigate, addToQuotation, isLoggedIn }: Prop
   const [printType, setPrintType] = useState('')
   const [zones, setZones] = useState<string[]>([])
   const [sizeQtys, setSizeQtys] = useState<Record<string, number>>({})
+  const [selectedSize, setSelectedSize] = useState('')
+  const [sizeQuantity, setSizeQuantity] = useState(1)
   const [nonApparelQty, setNonApparelQty] = useState(1)
   const [added, setAdded] = useState(false)
 
@@ -79,6 +81,31 @@ export default function Customize({ navigate, addToQuotation, isLoggedIn }: Prop
 
   function toggleZone(z: string) {
     setZones((prev) => prev.includes(z) ? prev.filter((x) => x !== z) : [...prev, z])
+  }
+
+  function selectProduct(p: string) {
+    setProduct(p)
+    setMaterial('')
+    setZones([])
+    setSizeQtys({})
+    setSizeQuantity(1)
+    setSelectedSize(APPAREL.includes(p) ? (PRODUCT_SIZES[p]?.[0] ?? SHIRT_SIZES[0]) : '')
+  }
+
+  function addSize() {
+    if (!selectedSize || !Number.isInteger(sizeQuantity) || sizeQuantity < 1) return
+    setSizeQtys((prev) => ({
+      ...prev,
+      [selectedSize]: (prev[selectedSize] ?? 0) + sizeQuantity,
+    }))
+  }
+
+  function removeSize(size: string) {
+    setSizeQtys((prev) => {
+      const next = { ...prev }
+      delete next[size]
+      return next
+    })
   }
 
   function handleAddToQuotation() {
@@ -155,7 +182,7 @@ export default function Customize({ navigate, addToQuotation, isLoggedIn }: Prop
                 {ALL_PRODUCTS.map((p) => (
                   <button
                     key={p}
-                    onClick={() => { setProduct(p); setMaterial(''); setZones([]) }}
+                    onClick={() => selectProduct(p)}
                     className={`p-4 rounded-xl border-2 text-left font-500 text-sm transition-all duration-150 ${
                       product === p
                         ? 'border-olive-500 bg-olive-50 text-olive-700'
@@ -280,34 +307,68 @@ export default function Customize({ navigate, addToQuotation, isLoggedIn }: Prop
                   <div>
                     <p className="text-sm font-600 text-ink mb-3">Sizes &amp; Quantities</p>
                     <div className="bg-white rounded-xl border border-stone-200 overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-stone-50 border-b border-stone-200">
-                            <th className="text-left px-4 py-2.5 text-stone-500 font-500 text-xs">Size</th>
-                            <th className="text-left px-4 py-2.5 text-stone-500 font-500 text-xs">Quantity</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(PRODUCT_SIZES[product] ?? SHIRT_SIZES).map((sz) => (
-                            <tr key={sz} className="border-b border-stone-100 last:border-0">
-                              <td className="px-4 py-2.5 font-display font-600 text-ink">{sz}</td>
-                              <td className="px-4 py-2.5">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => setSizeQtys((prev) => ({ ...prev, [sz]: Math.max(0, (prev[sz] ?? 0) - 1) }))}
-                                    className="w-7 h-7 rounded border border-stone-200 text-stone-500 hover:bg-stone-100 transition-colors flex items-center justify-center text-lg leading-none"
-                                  >−</button>
-                                  <span className="w-8 text-center font-600 text-ink">{sizeQtys[sz] ?? 0}</span>
-                                  <button
-                                    onClick={() => setSizeQtys((prev) => ({ ...prev, [sz]: (prev[sz] ?? 0) + 1 }))}
-                                    className="w-7 h-7 rounded border border-stone-200 text-stone-500 hover:bg-stone-100 transition-colors flex items-center justify-center text-lg leading-none"
-                                  >+</button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <div className="p-4 border-b border-stone-200">
+                        <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_8rem_auto] gap-3 items-end">
+                          <label className="block">
+                            <span className="block text-xs font-600 text-stone-500 mb-2">Size</span>
+                            <select
+                              value={selectedSize}
+                              onChange={(e) => setSelectedSize(e.target.value)}
+                              className="w-full px-3 py-2.5 rounded-lg border border-stone-200 bg-stone-50 text-ink focus:outline-none focus:ring-2 focus:ring-olive-400"
+                            >
+                              {(PRODUCT_SIZES[product] ?? SHIRT_SIZES).map((size) => (
+                                <option key={size} value={size}>{size}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block">
+                            <span className="block text-xs font-600 text-stone-500 mb-2">Quantity</span>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={sizeQuantity}
+                              onChange={(e) => {
+                                const next = Number(e.target.value)
+                                setSizeQuantity(Number.isFinite(next) ? Math.max(1, Math.floor(next)) : 1)
+                              }}
+                              className="w-full px-3 py-2.5 rounded-lg border border-stone-200 bg-stone-50 text-right text-ink focus:outline-none focus:ring-2 focus:ring-olive-400"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={addSize}
+                            disabled={!selectedSize || !Number.isInteger(sizeQuantity) || sizeQuantity < 1}
+                            className="w-full sm:w-auto px-5 py-2.5 rounded-lg bg-olive-500 hover:bg-olive-600 disabled:bg-stone-200 disabled:text-stone-400 text-white font-700 transition-colors"
+                          >
+                            Add size
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="px-4 pt-3 pb-2">
+                        <p className="text-xs font-600 text-stone-500 mb-2">Size breakdown</p>
+                        {Object.entries(sizeQtys).filter(([, qty]) => qty > 0).length > 0 ? (
+                          <div className="divide-y divide-stone-100">
+                            {Object.entries(sizeQtys).filter(([, qty]) => qty > 0).map(([size, qty]) => (
+                              <div key={size} className="grid grid-cols-[1fr_4rem_auto] items-center gap-3 py-2.5 text-sm">
+                                <span className="font-display font-600 text-ink">{size}</span>
+                                <span className="text-right font-600 text-ink tabular-nums">{qty}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => removeSize(size)}
+                                  aria-label={`Remove size ${size}`}
+                                  className="px-2.5 py-1.5 rounded-lg border border-stone-200 text-stone-500 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="py-3 text-sm text-stone-400">No sizes added yet.</p>
+                        )}
+                      </div>
                       <div className="px-4 py-3 bg-olive-50 border-t border-stone-200 flex justify-between items-center">
                         <span className="text-sm text-stone-600">Total Pieces</span>
                         <span className="font-display font-700 text-ink">{totalQty}</span>

@@ -124,21 +124,6 @@ export default function Contact() {
                 ))}
               </div>
             </div>
-
-            {/* Map placeholder */}
-            <div className="bg-white border border-stone-200 rounded-2xl overflow-hidden h-48 relative">
-              <img
-                src="https://images.unsplash.com/photo-1569336415962-a4bd9f69cd83?w=600&h=300&fit=crop&auto=format"
-                alt="Cebu City map area"
-                className="w-full h-full object-cover opacity-70"
-              />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="bg-white/90 backdrop-blur-sm rounded-xl px-4 py-3 text-center shadow-md">
-                  <p className="font-display font-700 text-ink text-sm">Mandaue City, Cebu</p>
-                  <p className="text-stone-500 text-xs mt-0.5">Lopez Jaena St., Subangdaku</p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>

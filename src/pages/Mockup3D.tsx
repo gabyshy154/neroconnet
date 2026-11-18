@@ -2,11 +2,17 @@ import { Component, Suspense, useMemo, useRef, useState } from 'react'
 import type { DragEvent, ReactNode } from 'react'
 import { Canvas, useFrame, useLoader } from '@react-three/fiber'
 import * as THREE from 'three'
-import type { PageId } from '../App'
+import type { PageId, User } from '../App'
+import ContactDetailsForm from '../components/ContactDetailsForm'
+import type { ContactDetails } from '../components/ContactDetailsForm'
+import { MEMBERSHIP_DISCOUNTS, generateNpcNumber } from '../config'
 
 interface Props {
   isLoggedIn: boolean
   navigate: (page: PageId) => void
+  user: User | null
+  onSaveContact: (details: ContactDetails) => void
+  onSaveNpc: (npc: NonNullable<User['npc']>) => void
 }
 
 type DesignSource = 'client' | 'nero'
@@ -157,7 +163,7 @@ function Shirt({
 /*  Page                                                               */
 /* ------------------------------------------------------------------ */
 
-export default function Mockup3D({ isLoggedIn, navigate }: Props) {
+export default function Mockup3D({ isLoggedIn, navigate, user, onSaveContact, onSaveNpc }: Props) {
   const [selectedProduct, setSelectedProduct] = useState(PRODUCTS[0])
   const [selectedColor, setSelectedColor] = useState(COLORS[0])
   const [frontUrl, setFrontUrl] = useState<string | undefined>()
@@ -168,6 +174,10 @@ export default function Mockup3D({ isLoggedIn, navigate }: Props) {
   const [dragging, setDragging] = useState(false)
   const [fileError, setFileError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [showContactForm, setShowContactForm] = useState(false)
+  const [continueAfterContactSave, setContinueAfterContactSave] = useState(false)
+  const [showNpcOffer, setShowNpcOffer] = useState(false)
+  const [npcOfferDeclined, setNpcOfferDeclined] = useState(false)
 
   // drag-to-rotate on top of the Front / Back toggle
   const [dragOffset, setDragOffset] = useState(0)
@@ -449,8 +459,41 @@ export default function Mockup3D({ isLoggedIn, navigate }: Props) {
 
             {isLoggedIn && reviewStatus === 'draft' && (
               <div>
+                {user?.contact ? (
+                  <div className="mb-3 bg-stone-50 border border-stone-200 rounded-xl p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="text-sm">
+                        <p className="font-700 text-ink">{user.contact.fullName}</p>
+                        <p className="text-stone-500 mt-0.5">{user.contact.mobile} · {user.contact.email}</p>
+                      </div>
+                      <button type="button" onClick={() => { setContinueAfterContactSave(false); setShowContactForm(true) }} className="text-sm font-700 text-olive-700 hover:underline">Edit</button>
+                    </div>
+                  </div>
+                ) : null}
+                {showContactForm && (
+                  <div className="mb-4 bg-white border border-stone-200 rounded-xl p-5">
+                    <h3 className="font-display font-700 text-ink mb-4">Contact details</h3>
+                    <ContactDetailsForm
+                      initialData={user?.contact ?? { fullName: user?.name ?? '', mobile: '', email: user?.email ?? '', streetAddress: '', barangay: '', city: '', province: '' }}
+                      submitLabel={user?.contact ? 'Save contact details' : 'Save & continue'}
+                      onCancel={() => setShowContactForm(false)}
+                      onSave={(details) => {
+                        onSaveContact(details)
+                        setShowContactForm(false)
+                        if (continueAfterContactSave) setReviewStatus('review')
+                      }}
+                    />
+                  </div>
+                )}
                 <button
-                  onClick={() => setReviewStatus('review')}
+                  onClick={() => {
+                    if (!user?.contact) {
+                      setContinueAfterContactSave(true)
+                      setShowContactForm(true)
+                    } else {
+                      setReviewStatus('review')
+                    }
+                  }}
                   disabled={!hasDesign}
                   className="w-full bg-olive-500 hover:bg-olive-600 text-white font-display font-700 py-3.5 rounded-xl transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md disabled:bg-stone-200 disabled:text-stone-400 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-none"
                 >
@@ -487,12 +530,55 @@ export default function Mockup3D({ isLoggedIn, navigate }: Props) {
             {isLoggedIn && reviewStatus === 'approved' && (
               <div className="bg-olive-50 border border-olive-200 rounded-xl p-5">
                 <p className="text-sm font-700 text-olive-800 mb-4">Your design is approved</p>
-                <button
-                  onClick={() => navigate('quotation')}
-                  className="w-full bg-olive-500 hover:bg-olive-600 text-white font-700 py-3 rounded-lg transition-colors"
-                >
-                  Continue to Quotation
-                </button>
+                {!user?.npc && !npcOfferDeclined && showNpcOffer && (
+                  <div className="mb-4 bg-white border border-olive-200 rounded-xl p-5">
+                    <h3 className="font-display font-700 text-ink mb-2">Join the Nero Privilege Card (NPC)</h3>
+                    <p className="text-sm text-stone-500 mb-4">Everyone starts at Bronze for free. Earn 1 point per ₱1,000 paid.</p>
+                    <div className="grid grid-cols-2 gap-2 mb-5">
+                      {(['Bronze', 'Silver', 'Gold', 'Platinum'] as const).map((tier) => (
+                        <div key={tier} className="rounded-lg border border-stone-200 p-3">
+                          <p className="font-700 text-sm text-ink">{tier}</p>
+                          <p className="text-xs text-stone-500">{MEMBERSHIP_DISCOUNTS[tier] * 100}% discount</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = new Date()
+                          onSaveNpc({
+                            number: generateNpcNumber(),
+                            tier: 'Bronze',
+                            enrollmentDate: `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`,
+                          })
+                          navigate('quotation')
+                        }}
+                        className="flex-1 bg-olive-500 hover:bg-olive-600 text-white font-700 py-3 rounded-lg"
+                      >
+                        Enroll now
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setNpcOfferDeclined(true); navigate('quotation') }}
+                        className="flex-1 border border-stone-200 text-ink font-600 py-3 rounded-lg"
+                      >
+                        No thanks, continue as a regular customer
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {(!showNpcOffer || user?.npc || npcOfferDeclined) && (
+                  <button
+                    onClick={() => {
+                      if (!user?.npc && !npcOfferDeclined) setShowNpcOffer(true)
+                      else navigate('quotation')
+                    }}
+                    className="w-full bg-olive-500 hover:bg-olive-600 text-white font-700 py-3 rounded-lg transition-colors"
+                  >
+                    Continue to Quotation
+                  </button>
+                )}
               </div>
             )}
           </div>

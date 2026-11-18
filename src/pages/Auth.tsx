@@ -1,9 +1,10 @@
+
 import { useState } from 'react'
 import type { PageId } from '../App'
 
 interface Props {
   navigate: (page: PageId) => void
-  onLogin: (user: { name: string; email: string }) => void
+  onLogin: (user: { name: string; email: string }, seededMember?: boolean) => void
 }
 
 export default function Auth({ navigate, onLogin }: Props) {
@@ -14,7 +15,7 @@ export default function Auth({ navigate, onLogin }: Props) {
 
   function handleLogin(e: React.FormEvent) {
     e.preventDefault()
-    onLogin({ name: 'Juan dela Cruz', email: loginForm.email })
+    onLogin({ name: 'Juan dela Cruz', email: loginForm.email }, true)
     navigate('home')
   }
 
