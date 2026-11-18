@@ -28,7 +28,11 @@ import type {
   Tier,
   ViewAs,
   OrderAssignmentEvent,
+  PermissionKey,
+  Role,
 } from '../types'
+import { getDefaultRolePermissions, permissionCatalog } from '../lib/permissions'
+import { hasPermission } from '../lib/admin'
 
 const STORAGE_KEY = 'neroconnect-admin-store'
 
@@ -47,6 +51,8 @@ export interface AdminStoreData {
   viewAs: ViewAs
   readNotificationIds: string[]
   assignmentEvents: OrderAssignmentEvent[]
+  rolePermissions: Record<Role, PermissionKey[]>
+  rolePermissionsUpdatedAt: string
 }
 
 export interface AdminStore extends AdminStoreData {
@@ -68,6 +74,8 @@ export interface AdminStore extends AdminStoreData {
   claimOrder: (orderId: string, at?: string) => void
   recordOrderPayment: (orderId: string, amount: number, at?: string) => void
   resetDemoData: () => void
+  updateRolePermissions: (role: Role, keys: PermissionKey[], actingRole: Role) => void
+  resetRolePermissions: (actingRole: Role) => void
 }
 
 function cloneSeedData(): AdminStoreData {
@@ -76,6 +84,8 @@ function cloneSeedData(): AdminStoreData {
     viewAs: 'Admin',
     readNotificationIds: [],
     assignmentEvents: [],
+    rolePermissions: getDefaultRolePermissions(),
+    rolePermissionsUpdatedAt: '2026-11-06T00:00:00.000Z',
   }
 }
 
@@ -119,8 +129,28 @@ export function createAdminStore(storage?: StateStorage) {
       viewAs: state.viewAs,
       readNotificationIds: state.readNotificationIds,
       assignmentEvents: state.assignmentEvents,
+      rolePermissions: state.rolePermissions,
+      rolePermissionsUpdatedAt: state.rolePermissionsUpdatedAt,
     }),
     storage: createJSONStorage(() => storage ?? localStorage),
+    version: 1,
+    migrate: (persistedState: unknown) => {
+      const persisted = (persistedState ?? {}) as Partial<AdminStoreData>
+      const defaults = getDefaultRolePermissions()
+      const rolePermissions = persisted.rolePermissions
+        ? {
+            Admin: permissionCatalog.map(permission => permission.key),
+            Manager: [...(persisted.rolePermissions.Manager ?? defaults.Manager)],
+            'Sales Person': [...(persisted.rolePermissions['Sales Person'] ?? defaults['Sales Person'])],
+            'Production Staff': [...(persisted.rolePermissions['Production Staff'] ?? defaults['Production Staff'])],
+          }
+        : defaults
+      return {
+        ...persisted,
+        rolePermissions,
+        rolePermissionsUpdatedAt: persisted.rolePermissionsUpdatedAt ?? '2026-11-06T00:00:00.000Z',
+      } as AdminStoreData
+    },
   }
 
   return create<AdminStore>()(persist((set, get) => ({
@@ -416,6 +446,36 @@ export function createAdminStore(storage?: StateStorage) {
         }
       }
       set({ readNotificationIds: [...readNotificationIds] })
+    },
+
+    updateRolePermissions: (role, keys, actingRole) => {
+      const state = get()
+      if (actingRole !== 'Admin' || !hasPermission(actingRole, 'action.role-permissions', state.rolePermissions)) {
+        throw new Error('Your role does not have permission to manage roles and permissions.')
+      }
+      if (role === 'Admin' && !keys.includes('action.role-permissions')) {
+        throw new Error('Admin must keep the Manage roles & permissions permission.')
+      }
+      set({
+        rolePermissions: {
+          ...state.rolePermissions,
+          [role]: role === 'Admin'
+            ? permissionCatalog.map(permission => permission.key)
+            : [...keys],
+        },
+        rolePermissionsUpdatedAt: new Date().toISOString(),
+      })
+    },
+
+    resetRolePermissions: actingRole => {
+      const state = get()
+      if (actingRole !== 'Admin' || !hasPermission(actingRole, 'action.role-permissions', state.rolePermissions)) {
+        throw new Error('Your role does not have permission to manage roles and permissions.')
+      }
+      set({
+        rolePermissions: getDefaultRolePermissions(),
+        rolePermissionsUpdatedAt: new Date().toISOString(),
+      })
     },
 
     claimOrder: (orderId, at = new Date().toISOString()) => {

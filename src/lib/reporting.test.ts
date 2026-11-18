@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { DEMO_TODAY } from '../config'
 import { seedData } from '../data/seed'
-import { filterByPeriod, filterByPostedAtPeriod, getDailyOrderSales } from './reporting'
+import { filterByDateAccessor, filterByPeriod, filterByPostedAtPeriod, getDailyOrderSales } from './reporting'
+import { getCostProfitSummary, getCostProfitSummaryForRows } from './admin'
 
 describe('reporting period filters', () => {
   const rows = [
@@ -45,6 +46,37 @@ describe('reporting period filters', () => {
       'NPS-20261106-003',
       'NPS-20261106-011',
     ])
+  })
+
+  it('applies completed-sales period filtering by payout postedAt', () => {
+    const allCompleted = getCostProfitSummary(seedData.orders, seedData.commissionPayouts)
+    const dailyRows = filterByDateAccessor(allCompleted.rows, 'Daily', row => row.completionDate)
+    const weeklyRows = filterByDateAccessor(allCompleted.rows, 'Weekly', row => row.completionDate)
+    const monthlyRows = filterByDateAccessor(allCompleted.rows, 'Monthly', row => row.completionDate)
+    expect(dailyRows.map(row => row.order.id))
+      .toEqual(['NPS-20261106-008', 'NPS-20261106-011'])
+    expect(weeklyRows.map(row => row.order.id))
+      .toEqual(['NPS-20261106-008', 'NPS-20261106-009', 'NPS-20261106-011'])
+    expect(monthlyRows.map(row => row.order.id))
+      .toEqual(['NPS-20261106-008', 'NPS-20261106-009', 'NPS-20261106-011'])
+
+    expect(getCostProfitSummaryForRows(dailyRows).totals.commission).toBe(280)
+    expect(getCostProfitSummaryForRows(weeklyRows).totals.commission).toBe(320)
+    expect(getCostProfitSummaryForRows(dailyRows).totals.netProfit).toBe(3220)
+    expect(getCostProfitSummaryForRows(weeklyRows).totals.netProfit).toBe(3560)
+    expect(getCostProfitSummaryForRows(monthlyRows).totals.netProfit).toBe(3560)
+  })
+
+  it('matches Cost & Profit commission totals to Commission payout totals', () => {
+    const allCompleted = getCostProfitSummary(seedData.orders, seedData.commissionPayouts)
+    const dailyCostRows = filterByDateAccessor(allCompleted.rows, 'Daily', row => row.completionDate)
+    const weeklyCostRows = filterByDateAccessor(allCompleted.rows, 'Weekly', row => row.completionDate)
+    const dailyPayouts = filterByPostedAtPeriod(seedData.commissionPayouts, 'Daily')
+    const weeklyPayouts = filterByPostedAtPeriod(seedData.commissionPayouts, 'Weekly')
+    expect(getCostProfitSummaryForRows(dailyCostRows).totals.commission)
+      .toBe(dailyPayouts.reduce((sum, payout) => sum + payout.amount, 0))
+    expect(getCostProfitSummaryForRows(weeklyCostRows).totals.commission)
+      .toBe(weeklyPayouts.reduce((sum, payout) => sum + payout.amount, 0))
   })
 
   it('filters commission entries by postedAt for Today and This Week', () => {

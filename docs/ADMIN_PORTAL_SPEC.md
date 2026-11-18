@@ -13,6 +13,14 @@ Back-office dashboard for Nero Printing Services and Trading. Front-end mockup o
 - Production stages: 1 Cutting, 2 Printing/Sewing, 3 Heat Press, 4 Quality Control. (Default: "Finishing" in the module text = "Heat Press".)
 
 ## 2. Look and feel
+## Editable roles and permissions
+- Role names are fixed: Admin, Manager, Sales Person, and Production Staff.
+- Only Admin can edit role permissions. Manager can open Roles & Permissions read-only.
+- My Schedule and Notifications are always available and are not permission-controlled.
+- Admin always retains every permission and cannot remove the Manage roles & permissions permission.
+- Permissions control sidebar access and designated action buttons. Store mutations for permissions are guarded; other store mutations are not role-guaranteed.
+- Permission settings are persisted in the local demo store. Existing saved data is migrated to the default role matrix when the permissions field is absent.
+
 Sage/olive accent, near-black text, off-white background. Left sidebar: Dashboard, Inventory, Recommendations, Reports & Analytics, Employees, Cost & Profit, Commission, Membership, plus Design Review and Pricing Rules. Status colors: green = ok, amber = warning, red = alert. Every screen has empty, error, and success states. Accessible: labels, focus states, color never the only signal.
 
 ## 3. Data model (TypeScript)
@@ -42,7 +50,8 @@ interface Recommendation { id: string; kind: 'Reorder' | 'Pricing'; subject: str
 - **Material yield (estimate):** yield = usable material per unit / consumption per piece; waste % shown. Use sample consumption values from config (placeholder).
 - **Recommendations (module logic):** if any material is low, generate Reorder suggestions (reorder qty = target stock − current stock). Otherwise generate Pricing suggestions. Admin must Approve or Reject each. Approving a pricing suggestion updates Pricing Rules. Approving a reorder logs an "In" movement as pending purchase (mock).
 - **Reports:** daily/weekly/monthly sales aggregation, exportable to CSV. Include a "Demand estimate" section labeled "input-based estimate from past sales, not predictive forecasting." (Default: keep the module's term "demand estimate".)
-- **Cost & Profit:** production cost = materialCost + laborCost. Gross profit = salePrice − production cost. Net profit = gross profit − commission − other expenses (placeholder config). Roll up per order and in total.
+- **Cost & Profit:** production cost = materialCost + laborCost. Gross profit = salePrice − production cost. Net profit = gross profit − commission. Roll up per order and in total.
+- **Completed-sales Cost & Profit:** only orders that are both claimed and paid in full are included. Each sale is grouped and filtered by the matching commission payout's `postedAt`; if a completed order has no payout, `createdAt` is the fallback.
 - **Commission:** ₱20 per piece, created when an order is claimed and fully paid. Per Sales Person totals, Today / This Week, "Mark as paid" sets status Paid with timestamp.
 - **Membership (oversight only, no enrollment):** list with tier, points, join date, search, manual tier correction (logged). Points = floor(paid / 1000).
 - **Employees / Create Employee flow:** one Employees screen with tabs for Staff List, Schedule, Order Assignment, Roles & Permissions, and Create Employee. Create account, assign role, team, and schedule, validate (required fields, unique name, valid schedule), store, then activate. Status goes Pending then Active. Roles: Admin, Manager, Sales Person, Production Staff only.
@@ -87,4 +96,4 @@ interface Recommendation { id: string; kind: 'Reorder' | 'Pricing'; subject: str
 - [ ] Membership has no enrollment, with logged manual tier correction.
 
 ## 9. Still to confirm
-Real price list and material costs, volume/rush percentages, credit-term percentages (+20% / +30%) with Mr. Losaynon, other-expense assumptions, and whether design approval applies to all orders or only T-shirts.
+Real price list and material costs, volume/rush percentages, credit-term percentages (+20% / +30%) with Mr. Losaynon, and whether design approval applies to all orders or only T-shirts.

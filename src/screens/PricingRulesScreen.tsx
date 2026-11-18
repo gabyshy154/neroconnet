@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { PricingRules, Tier } from '../types'
-import { formatCurrency } from '../lib/admin'
+import { formatCurrency, hasPermission } from '../lib/admin'
 import { useAdminStore } from '../store/adminStore'
+import type { Role } from '../types'
 import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
 
 const tiers: Tier[] = ['Bronze', 'Silver', 'Gold', 'Platinum']
@@ -9,9 +10,16 @@ const tiers: Tier[] = ['Bronze', 'Silver', 'Gold', 'Platinum']
 export default function PricingRulesScreen() {
   const rules = useAdminStore(state => state.pricingRules)
   const updatePricingRules = useAdminStore(state => state.updatePricingRules)
+  const viewAs = useAdminStore(state => state.viewAs)
+  const employees = useAdminStore(state => state.employees)
+  const rolePermissions = useAdminStore(state => state.rolePermissions)
   const [draft, setDraft] = useState<PricingRules>(rules)
   const [success, setSuccess] = useState('Pricing rules loaded from the local store.')
   const [error, setError] = useState('')
+  const effectiveRole: Role = viewAs === 'Admin' || viewAs === 'Manager'
+    ? viewAs
+    : employees.find(employee => employee.id === viewAs.slice('employee:'.length))?.role ?? 'Production Staff'
+  const canEditPricing = hasPermission(effectiveRole, 'action.pricing', rolePermissions)
 
   useEffect(() => {
     setDraft(structuredClone(rules))
@@ -114,7 +122,11 @@ export default function PricingRulesScreen() {
                 </label>
               </div>
             </ScreenCard>
-            <ScreenButton onClick={save}>Validate and save pricing rules</ScreenButton>
+            <ScreenButton
+              onClick={save}
+              disabled={!canEditPricing}
+              title={!canEditPricing ? 'Your role does not have permission' : undefined}
+            >Validate and save pricing rules</ScreenButton>
           </>
         )}
     </div>

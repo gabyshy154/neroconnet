@@ -48,9 +48,6 @@ export const sampleMaterialConsumption: Record<string, MaterialConsumption> = {
   'heat-tape-roll': { materialPerUnit: 50, usableMaterialPerUnit: 48, consumptionPerPiece: 0.25 },
 }
 
-// Sample other-expense estimate in Philippine pesos per order.
-export const otherExpensesPerOrder = 50
-
 export const pricingPlaceholders: PricingRules = {
   // Sample product prices in Philippine pesos per piece.
   productPrices: {

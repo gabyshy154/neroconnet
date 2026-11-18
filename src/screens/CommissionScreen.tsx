@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
-import { formatCurrency } from '../lib/admin'
+import { formatCurrency, hasPermission } from '../lib/admin'
+import type { Role } from '../types'
 import { filterByPostedAtPeriod, type ReportingPeriod } from '../lib/reporting'
 import { useAdminStore } from '../store/adminStore'
 import { DEMO_TODAY } from '../config'
@@ -11,6 +12,8 @@ export default function CommissionScreen() {
   const employees = useAdminStore(state => state.employees)
   const payouts = useAdminStore(state => state.commissionPayouts)
   const markCommissionPaid = useAdminStore(state => state.markCommissionPaid)
+  const viewAs = useAdminStore(state => state.viewAs)
+  const rolePermissions = useAdminStore(state => state.rolePermissions)
   const [period, setPeriod] = useState<ReportingPeriod>('Daily')
   const [success, setSuccess] = useState('Commission data loaded from the local store.')
   const [error, setError] = useState('')
@@ -27,6 +30,10 @@ export default function CommissionScreen() {
     earned: result.earned + payout.amount,
     paid: result.paid + (payout.status === 'Paid' ? payout.amount : 0),
   }), { pieces: 0, earned: 0, paid: 0 })
+  const effectiveRole: Role = viewAs === 'Admin' || viewAs === 'Manager'
+    ? viewAs
+    : employees.find(employee => employee.id === viewAs.slice('employee:'.length))?.role ?? 'Production Staff'
+  const canMarkPaid = hasPermission(effectiveRole, 'action.commission', rolePermissions)
 
   const payPayout = (id: string) => {
     setError('')
@@ -84,7 +91,11 @@ export default function CommissionScreen() {
                     <td style={cellStyle}>{payout.status}</td>
                     <td style={cellStyle}>{payout.paidAt ? new Date(payout.paidAt).toLocaleString() : '—'}</td>
                     <td style={cellStyle}>{payout.status === 'Unpaid'
-                      ? <ScreenButton onClick={() => payPayout(payout.id)}>Mark as paid</ScreenButton>
+                      ? <ScreenButton
+                          disabled={!canMarkPaid}
+                          title={!canMarkPaid ? 'Your role does not have permission' : undefined}
+                          onClick={() => payPayout(payout.id)}
+                        >Mark as paid</ScreenButton>
                       : 'Paid — locked'}</td>
                   </tr>
                 )

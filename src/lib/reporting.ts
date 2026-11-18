@@ -50,6 +50,15 @@ export function filterByPostedAtPeriod<T extends { postedAt: string }>(
   return filterRowsByPeriod(rows, period, now, row => row.postedAt)
 }
 
+export function filterByDateAccessor<T>(
+  rows: readonly T[],
+  period: ReportingPeriod,
+  getDate: (row: T) => string,
+  now: string | Date = DEMO_TODAY,
+): T[] {
+  return filterRowsByPeriod(rows, period, now, getDate)
+}
+
 function filterRowsByPeriod<T>(
   rows: readonly T[],
   period: ReportingPeriod,

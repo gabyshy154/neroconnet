@@ -1,18 +1,14 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
 import type { EmployeeInput } from '../lib/admin'
 import { useAdminStore } from '../store/adminStore'
 import type { Role } from '../types'
+import { hasPermission } from '../lib/admin'
+import { getDefaultRolePermissions, permissionCatalog, type RolePermissions } from '../lib/permissions'
 
 const weekDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const stages = ['Cutting', 'Printing/Sewing', 'Heat Press', 'Quality Control'] as const
 const roles: Role[] = ['Admin', 'Manager', 'Sales Person', 'Production Staff']
-const permissions: Record<Role, string[]> = {
-  Admin: ['View dashboard and reports', 'Manage inventory and recommendations', 'Manage employee records and permissions', 'Manage membership and pricing rules', 'Review submitted designs'],
-  Manager: ['View dashboard and reports', 'Manage inventory and recommendations', 'Manage production assignments', 'Review submitted designs'],
-  'Sales Person': ['View assigned orders', 'Record staff-entered payments', 'View membership details'],
-  'Production Staff': ['View assigned production orders', 'Update production stage', 'View assigned schedule'],
-}
 
 type EmployeeTab = 'Staff List' | 'Schedule' | 'Order Assignment' | 'Roles & Permissions' | 'Create Employee'
 
@@ -24,14 +20,75 @@ const tabs: EmployeeTab[] = [
   'Create Employee',
 ]
 
+function PermissionGroupRows({
+  group,
+  draftPermissions,
+  canManageRoles,
+  setDraftPermissions,
+  setUnsavedChanges,
+}: {
+  group: 'Screen access' | 'Actions'
+  draftPermissions: RolePermissions
+  canManageRoles: boolean
+  setDraftPermissions: Dispatch<SetStateAction<RolePermissions>>
+  setUnsavedChanges: Dispatch<SetStateAction<boolean>>
+}) {
+  const definitions = permissionCatalog.filter(permission => permission.group === group)
+  return (
+    <>
+      <tr>
+        <th
+          colSpan={5}
+          style={{ padding: '8px 10px', background: screenColors.accentLight, color: '#4A5A38', fontSize: 12, textAlign: 'left' }}
+        >{group}</th>
+      </tr>
+      {definitions.map(permission => (
+        <tr key={permission.key} style={{ borderBottom: `1px solid ${screenColors.border}` }}>
+          <th scope="row" style={{ padding: 9, color: screenColors.foreground, fontSize: 12, textAlign: 'left', fontWeight: 500 }}>
+            {permission.label}
+          </th>
+          {roles.map(role => {
+            const checked = role === 'Admin' || draftPermissions[role].includes(permission.key)
+            const locked = role === 'Admin' || !canManageRoles
+            return (
+              <td key={role} style={{ padding: 9, textAlign: 'center' }}>
+                <input
+                  type="checkbox"
+                  aria-label={`${role}: ${permission.label}`}
+                  checked={checked}
+                  disabled={locked}
+                  title={locked ? 'Admin permissions are locked and the matrix is read-only for non-Admins' : undefined}
+                  onChange={event => {
+                    setDraftPermissions(current => ({
+                      ...current,
+                      [role]: event.target.checked
+                        ? [...current[role], permission.key]
+                        : current[role].filter(key => key !== permission.key),
+                    }))
+                    setUnsavedChanges(true)
+                  }}
+                />
+              </td>
+            )
+          })}
+        </tr>
+      ))}
+    </>
+  )
+}
+
 export default function EmployeesScreen() {
   const employees = useAdminStore(state => state.employees)
   const orders = useAdminStore(state => state.orders)
+  const viewAs = useAdminStore(state => state.viewAs)
+  const rolePermissions = useAdminStore(state => state.rolePermissions)
+  const rolePermissionsUpdatedAt = useAdminStore(state => state.rolePermissionsUpdatedAt)
+  const updateRolePermissions = useAdminStore(state => state.updateRolePermissions)
+  const resetRolePermissions = useAdminStore(state => state.resetRolePermissions)
   const createEmployee = useAdminStore(state => state.createEmployee)
   const activateEmployee = useAdminStore(state => state.activateEmployee)
   const assignOrderTeamAndSchedule = useAdminStore(state => state.assignOrderTeamAndSchedule)
   const [activeTab, setActiveTab] = useState<EmployeeTab>('Staff List')
-  const [selectedRole, setSelectedRole] = useState<Role>('Admin')
   const [name, setName] = useState('')
   const [role, setRole] = useState<Role>('Production Staff')
   const [team, setTeam] = useState('')
@@ -40,8 +97,36 @@ export default function EmployeesScreen() {
   const [scheduleByOrder, setScheduleByOrder] = useState<Record<string, string>>({})
   const [success, setSuccess] = useState('Employee records and schedules loaded from the local store.')
   const [error, setError] = useState('')
+  const [draftPermissions, setDraftPermissions] = useState<RolePermissions>(structuredClone(rolePermissions))
+  const [unsavedChanges, setUnsavedChanges] = useState(false)
   const activeOrders = orders.filter(order => order.stage && !order.claimed)
   const activeEmployees = employees.filter(employee => employee.status === 'Active')
+  const selectedEmployeeId = viewAs.startsWith('employee:') ? viewAs.slice('employee:'.length) : ''
+  const effectiveRole: Role = viewAs === 'Admin' || viewAs === 'Manager'
+    ? viewAs
+    : employees.find(employee => employee.id === selectedEmployeeId)?.role ?? 'Production Staff'
+  const canManageEmployees = hasPermission(effectiveRole, 'action.employees', rolePermissions)
+  const canManageRoles = effectiveRole === 'Admin'
+  const canViewEmployees = hasPermission(effectiveRole, 'screen.employees', rolePermissions)
+
+  useEffect(() => {
+    setDraftPermissions(structuredClone(rolePermissions))
+    setUnsavedChanges(false)
+  }, [rolePermissions])
+
+  const visibleTabs = tabs.filter(tab =>
+    tab === 'Create Employee'
+      ? canManageEmployees
+      : tab === 'Roles & Permissions'
+        ? canViewEmployees
+        : true,
+  )
+
+  useEffect(() => {
+    if (!visibleTabs.some(tab => tab === activeTab)) {
+      setActiveTab(visibleTabs[0] ?? 'Staff List')
+    }
+  }, [activeTab, canManageEmployees, canViewEmployees])
 
   const runAction = (action: () => void, message: string) => {
     setError('')
@@ -89,7 +174,7 @@ export default function EmployeesScreen() {
       <ScreenTitle title="Employees" subtitle="Staff, schedules, production assignments, roles, and employee creation." />
       <ScreenFeedback success={success} error={error} />
       <div role="tablist" aria-label="Employee sections" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-        {tabs.map(tab => (
+        {visibleTabs.map(tab => (
           <button
             key={tab}
             id={`employee-tab-${tab}`}
@@ -132,7 +217,11 @@ export default function EmployeesScreen() {
                     <td style={{ padding: 10, color: screenColors.muted, fontSize: 12 }}>{employee.schedule.length ? employee.schedule.join(', ') : 'Not scheduled'}</td>
                     <td style={{ padding: 10 }}>
                       {employee.status === 'Pending'
-                        ? <ScreenButton onClick={() => runAction(() => activateEmployee(employee.id), `${employee.name} is now Active.`)}>Activate</ScreenButton>
+                        ? <ScreenButton
+                            disabled={!canManageEmployees}
+                            title={!canManageEmployees ? 'Your role does not have permission' : undefined}
+                            onClick={() => runAction(() => activateEmployee(employee.id), `${employee.name} is now Active.`)}
+                          >Activate</ScreenButton>
                         : <span style={{ color: screenColors.muted, fontSize: 12 }}>—</span>}
                     </td>
                   </tr>
@@ -210,25 +299,78 @@ export default function EmployeesScreen() {
       {activeTab === 'Roles & Permissions' && (
         <ScreenCard>
           <h2 style={{ color: screenColors.foreground, fontSize: 15, fontWeight: 600, marginBottom: 5 }}>Permissions by role</h2>
-          <p style={{ color: screenColors.muted, fontSize: 12, marginBottom: 12 }}>Review the access configured for each role.</p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-            {roles.map(item => (
-              <button key={item} type="button" onClick={() => setSelectedRole(item)} aria-pressed={selectedRole === item} style={{
-                textAlign: 'left',
-                padding: '8px 10px',
-                border: `1px solid ${selectedRole === item ? screenColors.accent : screenColors.border}`,
-                borderRadius: 5,
-                background: selectedRole === item ? screenColors.accentLight : '#fff',
-                color: screenColors.foreground,
-                font: '13px Inter, sans-serif',
-                cursor: 'pointer',
-              }}>{item}</button>
-            ))}
+          <p style={{ color: screenColors.muted, fontSize: 12, marginBottom: 12 }}>
+            {canManageRoles
+              ? 'Configure screen access and action permissions for each role.'
+              : 'Role permissions are read-only. Only Admin can change them.'}
+          </p>
+          {!canManageRoles && (
+            <p style={{ color: '#4A5A38', background: screenColors.accentLight, borderRadius: 6, padding: 8, fontSize: 12, marginBottom: 12 }}>
+              You can review this matrix, but it cannot be edited from the Manager view.
+            </p>
+          )}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+              <thead>
+                <tr style={{ background: '#ECEAE3', textAlign: 'left' }}>
+                  <th style={{ padding: 10, color: screenColors.muted, fontSize: 11 }}>Permission</th>
+                  {roles.map(role => <th key={role} style={{ padding: 10, color: screenColors.muted, fontSize: 11, textAlign: 'center' }}>{role}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {(['Screen access', 'Actions'] as const).map(group => (
+                  <PermissionGroupRows
+                    key={group}
+                    group={group}
+                    draftPermissions={draftPermissions}
+                    canManageRoles={canManageRoles}
+                    setDraftPermissions={setDraftPermissions}
+                    setUnsavedChanges={setUnsavedChanges}
+                  />
+                ))}
+              </tbody>
+            </table>
           </div>
-          <h3 style={{ color: screenColors.foreground, fontSize: 13, marginBottom: 9 }}>{selectedRole} permissions</h3>
-          <ul style={{ paddingLeft: 18, color: screenColors.muted, fontSize: 12, lineHeight: 1.8 }}>
-            {permissions[selectedRole].map(permission => <li key={permission}>{permission}</li>)}
-          </ul>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
+            {canManageRoles && (
+              <>
+                <ScreenButton
+                  disabled={!unsavedChanges}
+                  title={!unsavedChanges ? 'No permission changes to save' : undefined}
+                  onClick={() => {
+                    try {
+                      roles.forEach(role => updateRolePermissions(role, draftPermissions[role], effectiveRole))
+                      setUnsavedChanges(false)
+                      setSuccess('Role permissions saved.')
+                      setError('')
+                    } catch (reason) {
+                      setSuccess('')
+                      setError(reason instanceof Error ? reason.message : 'Role permissions could not be saved.')
+                    }
+                  }}
+                >Save changes</ScreenButton>
+                <ScreenButton
+                  variant="secondary"
+                  onClick={() => {
+                    try {
+                      resetRolePermissions(effectiveRole)
+                      setDraftPermissions(getDefaultRolePermissions())
+                      setUnsavedChanges(false)
+                      setSuccess('Role permissions reset to defaults.')
+                      setError('')
+                    } catch (reason) {
+                      setSuccess('')
+                      setError(reason instanceof Error ? reason.message : 'Role permissions could not be reset.')
+                    }
+                  }}
+                >Reset to defaults</ScreenButton>
+              </>
+            )}
+            {unsavedChanges && canManageRoles && <span style={{ color: '#9B3526', fontSize: 12, fontWeight: 600 }}>Unsaved changes</span>}
+            <span style={{ marginLeft: canManageRoles ? 'auto' : 0, color: screenColors.muted, fontSize: 12 }}>
+              Last updated: {rolePermissionsUpdatedAt ? new Date(rolePermissionsUpdatedAt).toLocaleString() : 'Never'}
+            </span>
+          </div>
         </ScreenCard>
       )}
 
@@ -262,7 +404,11 @@ export default function EmployeesScreen() {
                 ))}
               </div>
             </fieldset>
-            <ScreenButton type="submit">Validate and create Pending employee</ScreenButton>
+            <ScreenButton
+              type="submit"
+              disabled={!canManageEmployees}
+              title={!canManageEmployees ? 'Your role does not have permission' : undefined}
+            >Validate and create Pending employee</ScreenButton>
           </form>
         </ScreenCard>
       )}

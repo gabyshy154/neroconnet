@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import type { StateStorage } from 'zustand/middleware'
 import { isLowStock } from '../lib/admin'
 import { seedData } from '../data/seed'
-import { otherExpensesPerOrder, pricingPlaceholders, reorderTargetStock, sampleMaterialConsumption } from '../config'
+import { pricingPlaceholders, reorderTargetStock, sampleMaterialConsumption } from '../config'
 import { createAdminStore } from './adminStore'
+import { getDefaultRolePermissions } from '../lib/permissions'
 
 function createMemoryStorage(): StateStorage {
   const values = new Map<string, string>()
@@ -97,7 +98,6 @@ describe('admin store', () => {
     expect(seedData.members.map(member => member.npcNumber)).toEqual(
       Array.from({ length: 10 }, (_, index) => `NPC-${String(index + 101).padStart(6, '0')}`),
     )
-    expect(otherExpensesPerOrder).toBe(50)
     const materialIds = new Set(seedData.materials.map(material => material.id))
     expect(Object.keys(reorderTargetStock).every(id => materialIds.has(id))).toBe(true)
     expect(Object.keys(sampleMaterialConsumption).every(id => materialIds.has(id))).toBe(true)
@@ -310,5 +310,32 @@ describe('admin store', () => {
     expect(persistentStore.getState().membershipTierCorrections).toEqual([])
     expect(persistentStore.getState().viewAs).toBe('Admin')
     expect(persistentStore.getState().readNotificationIds).toEqual([])
+  })
+  it('protects Admin permissions and rejects non-Admin permission updates', () => {
+    expect(() => store.getState().updateRolePermissions('Admin', [], 'Admin'))
+      .toThrow(/must keep/)
+    expect(() => store.getState().updateRolePermissions('Manager', ['screen.inventory'], 'Manager'))
+      .toThrow(/does not have permission/)
+  })
+
+  it('loads persisted state without rolePermissions using defaults', () => {
+    const storage = createMemoryStorage()
+    storage.setItem('neroconnect-admin-store', JSON.stringify({
+      state: { viewAs: 'Admin' },
+      version: 0,
+    }))
+    const persistentStore = createAdminStore(storage)
+    expect(persistentStore.getState().rolePermissions).toEqual(getDefaultRolePermissions())
+  })
+
+  it('can reset role permissions to defaults', () => {
+    store.getState().updateRolePermissions(
+      'Sales Person',
+      ['screen.inventory'],
+      'Admin',
+    )
+    expect(store.getState().rolePermissions['Sales Person']).toContain('screen.inventory')
+    store.getState().resetRolePermissions('Admin')
+    expect(store.getState().rolePermissions).toEqual(getDefaultRolePermissions())
   })
 })

@@ -93,12 +93,14 @@ export function ScreenButton({
   variant = 'primary',
   disabled = false,
   type = 'button',
+  title,
 }: {
   children: ReactNode
   onClick?: () => void
   variant?: 'primary' | 'secondary' | 'danger'
   disabled?: boolean
   type?: 'button' | 'submit'
+  title?: string
 }) {
   const variantStyle = {
     primary: { background: colors.accent, color: '#fff', border: '1px solid #4A5A38' },
@@ -110,6 +112,7 @@ export function ScreenButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
+      title={title}
       style={{
         ...variantStyle,
         borderRadius: 6,

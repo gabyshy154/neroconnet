@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useAdminStore } from '../store/adminStore'
 import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
 import { includePendingPurchases, isLowStock } from '../lib/admin'
+import { hasPermission } from '../lib/admin'
+import type { Role } from '../types'
 
 export default function RecommendationsScreen() {
   const materials = useAdminStore(state => state.materials)
@@ -10,12 +12,19 @@ export default function RecommendationsScreen() {
   const approveRecommendation = useAdminStore(state => state.approveRecommendation)
   const rejectRecommendation = useAdminStore(state => state.rejectRecommendation)
   const regenerateRecommendations = useAdminStore(state => state.regenerateRecommendations)
+  const viewAs = useAdminStore(state => state.viewAs)
+  const employees = useAdminStore(state => state.employees)
+  const rolePermissions = useAdminStore(state => state.rolePermissions)
   const [success, setSuccess] = useState('Recommendations are input-based estimates, not predictive forecasting.')
   const [error, setError] = useState('')
   const hasLowStock = includePendingPurchases(materials, movements).some(isLowStock)
   const visible = recommendations.filter(item =>
     item.kind === (hasLowStock ? 'Reorder' : 'Pricing'),
   )
+  const effectiveRole: Role = viewAs === 'Admin' || viewAs === 'Manager'
+    ? viewAs
+    : employees.find(employee => employee.id === viewAs.slice('employee:'.length))?.role ?? 'Production Staff'
+  const canDecide = hasPermission(effectiveRole, 'action.recommendations', rolePermissions)
 
   const decide = (id: string, approve: boolean) => {
     setError('')
@@ -64,8 +73,17 @@ export default function RecommendationsScreen() {
                   {recommendation.status === 'Pending'
                     ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <ScreenButton onClick={() => decide(recommendation.id, true)}>Approve</ScreenButton>
-                        <ScreenButton variant="danger" onClick={() => decide(recommendation.id, false)}>Reject</ScreenButton>
+                        <ScreenButton
+                          disabled={!canDecide}
+                          title={!canDecide ? 'Your role does not have permission' : undefined}
+                          onClick={() => decide(recommendation.id, true)}
+                        >Approve</ScreenButton>
+                        <ScreenButton
+                          variant="danger"
+                          disabled={!canDecide}
+                          title={!canDecide ? 'Your role does not have permission' : undefined}
+                          onClick={() => decide(recommendation.id, false)}
+                        >Reject</ScreenButton>
                       </div>
                     )
                     : <span style={{ color: recommendation.status === 'Approved' ? '#276749' : '#9B3526', fontSize: 12, fontWeight: 600 }}>{recommendation.status}</span>}

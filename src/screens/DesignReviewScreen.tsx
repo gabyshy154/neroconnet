@@ -1,15 +1,24 @@
 import { useState } from 'react'
 import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
 import { useAdminStore } from '../store/adminStore'
+import { hasPermission } from '../lib/admin'
+import type { Role } from '../types'
 
 export default function DesignReviewScreen() {
   const submissions = useAdminStore(state => state.designSubmissions)
   const approveDesign = useAdminStore(state => state.approveDesign)
   const requestDesignRevision = useAdminStore(state => state.requestDesignRevision)
+  const viewAs = useAdminStore(state => state.viewAs)
+  const employees = useAdminStore(state => state.employees)
+  const rolePermissions = useAdminStore(state => state.rolePermissions)
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [failedPreviews, setFailedPreviews] = useState<Record<string, boolean>>({})
   const [success, setSuccess] = useState('Design Review data loaded from the local store.')
   const [error, setError] = useState('')
+  const effectiveRole: Role = viewAs === 'Admin' || viewAs === 'Manager'
+    ? viewAs
+    : employees.find(employee => employee.id === viewAs.slice('employee:'.length))?.role ?? 'Production Staff'
+  const canReviewDesign = hasPermission(effectiveRole, 'action.design', rolePermissions)
 
   const runAction = (action: () => void, message: string) => {
     setError('')
@@ -94,6 +103,7 @@ export default function DesignReviewScreen() {
                     <textarea
                       id={`revision-note-${submission.id}`}
                       value={notes[submission.id] ?? ''}
+                      disabled={!canReviewDesign}
                       onChange={event => setNotes(current => ({ ...current, [submission.id]: event.target.value }))}
                       rows={3}
                       style={{
@@ -108,9 +118,15 @@ export default function DesignReviewScreen() {
                       }}
                     />
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <ScreenButton onClick={() => runAction(() => approveDesign(submission.id), 'Design approved.')}>Approve</ScreenButton>
+                      <ScreenButton
+                        disabled={!canReviewDesign}
+                        title={!canReviewDesign ? 'Your role does not have permission' : undefined}
+                        onClick={() => runAction(() => approveDesign(submission.id), 'Design approved.')}
+                      >Approve</ScreenButton>
                       <ScreenButton
                         variant="secondary"
+                        disabled={!canReviewDesign}
+                        title={!canReviewDesign ? 'Your role does not have permission' : undefined}
                         onClick={() => runAction(
                           () => requestDesignRevision(submission.id, notes[submission.id] ?? ''),
                           'Revision requested and note saved.',

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { commissionPerPiece, pointsPer1000Paid, pricingPlaceholders } from '../config'
 import type { AdminOrder, Employee, Material } from '../types'
+import { getDefaultRolePermissions } from './permissions'
+import { seedData } from '../data/seed'
 import {
   addInventory,
   calculateCostAndProfit,
@@ -12,6 +14,10 @@ import {
   exportToCsv,
   formatCurrency,
   generateRecommendations,
+  hasPermission,
+  getCostProfitSummary,
+  getCostProfitChartData,
+  getCompletedSaleCompletionDate,
   includePendingPurchases,
   isLowStock,
   validateEmployeeInput,
@@ -177,12 +183,12 @@ describe('commission and profitability', () => {
   })
 
   it('calculates production, gross, and net profit', () => {
-    expect(calculateCostAndProfit(order, 240, 100)).toEqual({
+    expect(calculateCostAndProfit(order, 240)).toEqual({
       productionCost: 1800,
       grossProfit: 3200,
-      netProfit: 2860,
+      netProfit: 2960,
     })
-    expect(calculateCostAndProfit(order, 240).netProfit).toBe(2910)
+    expect(calculateCostAndProfit(order, 240).netProfit).toBe(2960)
   })
 })
 
@@ -230,6 +236,25 @@ describe('pricing rule validation', () => {
   })
 })
 
+describe('role permissions', () => {
+  it('checks permissions using the supplied role map', () => {
+    const defaults = getDefaultRolePermissions()
+    expect(hasPermission('Sales Person', 'screen.inventory', defaults)).toBe(false)
+    expect(hasPermission('Sales Person', 'screen.inventory', {
+      ...defaults,
+      'Sales Person': ['screen.inventory'],
+    })).toBe(true)
+  })
+
+  it('keeps the default behavior for Admin and Manager', () => {
+    const defaults = getDefaultRolePermissions()
+    expect(hasPermission('Admin', 'screen.inventory', defaults)).toBe(true)
+    expect(hasPermission('Manager', 'screen.inventory', defaults)).toBe(true)
+    expect(hasPermission('Sales Person', 'screen.inventory', defaults)).toBe(false)
+    expect(hasPermission('Production Staff', 'screen.inventory', defaults)).toBe(false)
+  })
+})
+
 describe('employee creation', () => {
   const input = {
     name: '  Alex Example ',
@@ -260,6 +285,48 @@ describe('employee creation', () => {
       name: 'Alex Example',
       status: 'Pending',
     })
+  })
+})
+
+describe('cost and profit summaries', () => {
+  it('uses payout postedAt as completion date and falls back to createdAt', () => {
+    const order = seedData.orders.find(item => item.id === 'NPS-20261106-008')!
+    expect(getCompletedSaleCompletionDate(order, seedData.commissionPayouts)).toBe('2026-11-06T09:35:00.000Z')
+    expect(getCompletedSaleCompletionDate(order, [])).toBe(order.createdAt)
+  })
+
+  it('includes only claimed and fully paid orders', () => {
+    const summary = getCostProfitSummary(seedData.orders, seedData.commissionPayouts)
+    expect(summary.rows.map(row => row.order.id)).toEqual([
+      'NPS-20261106-008',
+      'NPS-20261106-009',
+      'NPS-20261106-010',
+      'NPS-20261106-011',
+    ])
+  })
+
+  it('totals equal the sum of per-order rows and chart data', () => {
+    const summary = getCostProfitSummary(seedData.orders, seedData.commissionPayouts)
+    expect(summary.totals.sales).toBe(summary.rows.reduce((sum, row) => sum + row.sales, 0))
+    expect(summary.totals.productionCost).toBe(summary.rows.reduce((sum, row) => sum + row.productionCost, 0))
+    expect(summary.totals.grossProfit).toBe(summary.rows.reduce((sum, row) => sum + row.grossProfit, 0))
+    expect(summary.totals.commission).toBe(summary.rows.reduce((sum, row) => sum + row.commission, 0))
+    expect(summary.totals.netProfit).toBe(summary.rows.reduce((sum, row) => sum + row.netProfit, 0))
+
+    const chart = getCostProfitChartData(summary.rows)
+    expect(chart.reduce((sum, point) => sum + point.sales, 0)).toBe(summary.totals.sales)
+    expect(chart.reduce((sum, point) => sum + point.productionCost, 0)).toBe(summary.totals.productionCost)
+    expect(chart.reduce((sum, point) => sum + point.netProfit, 0)).toBe(summary.totals.netProfit)
+  })
+
+  it('includes negative net profit for loss cases', () => {
+    const result = calculateCostAndProfit(
+      { salePrice: 100, materialCost: 200, laborCost: 100 },
+      50,
+    )
+    expect(result.productionCost).toBe(300)
+    expect(result.grossProfit).toBe(-200)
+    expect(result.netProfit).toBe(-250)
   })
 })
 

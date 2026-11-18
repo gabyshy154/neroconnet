@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react'
 import type { Tier } from '../types'
 import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
 import { useAdminStore } from '../store/adminStore'
+import { hasPermission } from '../lib/admin'
+import type { Role } from '../types'
 
 const tiers: Tier[] = ['Bronze', 'Silver', 'Gold', 'Platinum']
 const cellStyle: React.CSSProperties = { padding: '10px 12px', borderBottom: `1px solid ${screenColors.border}`, textAlign: 'left', fontSize: 12 }
@@ -14,6 +16,9 @@ export default function MembershipScreen() {
   const members = useAdminStore(state => state.members)
   const corrections = useAdminStore(state => state.membershipTierCorrections)
   const correctMemberTier = useAdminStore(state => state.correctMemberTier)
+  const viewAs = useAdminStore(state => state.viewAs)
+  const employees = useAdminStore(state => state.employees)
+  const rolePermissions = useAdminStore(state => state.rolePermissions)
   const [search, setSearch] = useState('')
   const [draftTiers, setDraftTiers] = useState<Record<string, Tier>>({})
   const [success, setSuccess] = useState('Membership oversight data loaded from the local store.')
@@ -24,6 +29,10 @@ export default function MembershipScreen() {
       !query || member.name.toLowerCase().includes(query) || member.npcNumber.toLowerCase().includes(query),
     )
   }, [members, search])
+  const effectiveRole: Role = viewAs === 'Admin' || viewAs === 'Manager'
+    ? viewAs
+    : employees.find(employee => employee.id === viewAs.slice('employee:'.length))?.role ?? 'Production Staff'
+  const canCorrectTier = hasPermission(effectiveRole, 'action.member-tier', rolePermissions)
 
   const saveCorrection = (npcNumber: string, tier: Tier) => {
     setError('')
@@ -68,7 +77,7 @@ export default function MembershipScreen() {
                     <td style={cellStyle}>{member.joinedAt}</td>
                     <td style={cellStyle}>
                       <label htmlFor={`tier-${member.npcNumber}`} style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)' }}>Correct tier for {member.name}</label>
-                      <select id={`tier-${member.npcNumber}`} value={selectedTier} onChange={event => {
+                      <select id={`tier-${member.npcNumber}`} value={selectedTier} disabled={!canCorrectTier} title={!canCorrectTier ? 'Your role does not have permission' : undefined} onChange={event => {
                         const tier = event.target.value
                         if (isTier(tier)) {
                           setDraftTiers(current => ({ ...current, [member.npcNumber]: tier }))
@@ -77,7 +86,8 @@ export default function MembershipScreen() {
                         {tiers.map(tier => <option key={tier}>{tier}</option>)}
                       </select>
                       <ScreenButton
-                        disabled={selectedTier === member.tier}
+                        disabled={!canCorrectTier || selectedTier === member.tier}
+                        title={!canCorrectTier ? 'Your role does not have permission' : undefined}
                         onClick={() => saveCorrection(member.npcNumber, selectedTier)}
                       >Save</ScreenButton>
                     </td>

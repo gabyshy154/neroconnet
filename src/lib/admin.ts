@@ -1,4 +1,4 @@
-import { commissionPerPiece, otherExpensesPerOrder, pointsPer1000Paid } from '../config'
+import { commissionPerPiece, pointsPer1000Paid } from '../config'
 import type {
   AdminOrder,
   CommissionPayout,
@@ -55,6 +55,44 @@ export interface ProfitBreakdown {
   productionCost: number
   grossProfit: number
   netProfit: number
+}
+
+export interface CostProfitRow {
+  order: AdminOrder
+  completionDate: string
+  sales: number
+  productionCost: number
+  grossProfit: number
+  commission: number
+  netProfit: number
+}
+
+export interface CostProfitTotals {
+  sales: number
+  productionCost: number
+  grossProfit: number
+  commission: number
+  netProfit: number
+}
+
+export interface CostProfitSummary {
+  rows: CostProfitRow[]
+  totals: CostProfitTotals
+}
+
+export interface CostProfitChartPoint {
+  date: string
+  sales: number
+  productionCost: number
+  netProfit: number
+}
+
+export function hasPermission(
+  role: Role,
+  key: import('../types').PermissionKey,
+  rolePermissions: Record<Role, import('../types').PermissionKey[]>,
+): boolean {
+  return role === 'Admin' || (rolePermissions[role]?.includes(key) ?? false)
 }
 
 export type EmployeeInput = Omit<Employee, 'id' | 'status'>
@@ -267,21 +305,97 @@ export function createCommissionPayout(
 export function calculateCostAndProfit(
   order: Pick<AdminOrder, 'salePrice' | 'materialCost' | 'laborCost'>,
   commission: number,
-  otherExpenses = otherExpensesPerOrder,
 ): ProfitBreakdown {
   assertFiniteNonNegative(order.salePrice, 'Sale price')
   assertFiniteNonNegative(order.materialCost, 'Material cost')
   assertFiniteNonNegative(order.laborCost, 'Labor cost')
   assertFiniteNonNegative(commission, 'Commission')
-  assertFiniteNonNegative(otherExpenses, 'Other expenses')
 
   const productionCost = order.materialCost + order.laborCost
   const grossProfit = order.salePrice - productionCost
   return {
     productionCost,
     grossProfit,
-    netProfit: grossProfit - commission - otherExpenses,
+    netProfit: grossProfit - commission,
   }
+}
+
+export function getCompletedSaleCompletionDate(
+  order: AdminOrder,
+  payouts: readonly CommissionPayout[],
+): string {
+  const payout = payouts.find(item => item.orderId === order.id)
+  return payout?.postedAt ?? order.createdAt
+}
+
+export function getCostProfitSummary(
+  orders: readonly AdminOrder[],
+  payouts: readonly CommissionPayout[],
+): CostProfitSummary {
+  const completedOrders = orders.filter(order =>
+    order.claimed && Number.isFinite(order.amountPaid) && order.amountPaid >= order.salePrice,
+  )
+  const rows = completedOrders.map(order => {
+    const commission = payouts
+      .filter(payout => payout.orderId === order.id)
+      .reduce((total, payout) => total + payout.amount, 0)
+    const breakdown = calculateCostAndProfit(order, commission)
+    return {
+      order,
+      completionDate: getCompletedSaleCompletionDate(order, payouts),
+      sales: order.salePrice,
+      productionCost: breakdown.productionCost,
+      grossProfit: breakdown.grossProfit,
+      commission,
+      netProfit: breakdown.netProfit,
+    }
+  })
+  const totals = rows.reduce<CostProfitTotals>((result, row) => ({
+    sales: result.sales + row.sales,
+    productionCost: result.productionCost + row.productionCost,
+    grossProfit: result.grossProfit + row.grossProfit,
+    commission: result.commission + row.commission,
+    netProfit: result.netProfit + row.netProfit,
+  }), {
+    sales: 0,
+    productionCost: 0,
+    grossProfit: 0,
+    commission: 0,
+    netProfit: 0,
+  })
+  return { rows, totals }
+}
+
+export function getCostProfitSummaryForRows(rows: readonly CostProfitRow[]): CostProfitSummary {
+  const totals = rows.reduce<CostProfitTotals>((result, row) => ({
+    sales: result.sales + row.sales,
+    productionCost: result.productionCost + row.productionCost,
+    grossProfit: result.grossProfit + row.grossProfit,
+    commission: result.commission + row.commission,
+    netProfit: result.netProfit + row.netProfit,
+  }), {
+    sales: 0,
+    productionCost: 0,
+    grossProfit: 0,
+    commission: 0,
+    netProfit: 0,
+  })
+  return { rows: [...rows], totals }
+}
+
+export function getCostProfitChartData(rows: readonly CostProfitRow[]): CostProfitChartPoint[] {
+  const totalsByDate = new Map<string, CostProfitChartPoint>()
+  for (const row of rows) {
+    const date = row.completionDate.slice(0, 10)
+    const current = totalsByDate.get(date) ?? { date, sales: 0, productionCost: 0, netProfit: 0 }
+    totalsByDate.set(date, {
+      date,
+      sales: current.sales + row.sales,
+      productionCost: current.productionCost + row.productionCost,
+      netProfit: current.netProfit + row.netProfit,
+    })
+  }
+  return [...totalsByDate.values()].sort((first, second) => first.date.localeCompare(second.date))
 }
 
 export function calculateMembershipPoints(paid: number): number {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   BarChart2,
   Bell,
@@ -31,6 +31,8 @@ import NotificationsScreen from './screens/NotificationsScreen'
 import PricingRulesScreen from './screens/PricingRulesScreen'
 import RecommendationsScreen from './screens/RecommendationsScreen'
 import ReportsScreen from './screens/ReportsScreen'
+import { hasPermission } from './lib/admin'
+import type { PermissionKey, Role } from './types'
 
 const colors = {
   background: '#F4F3EE',
@@ -84,8 +86,34 @@ const employeeNavigation = [
   Icon: typeof LayoutDashboard
 }[]
 
+const screenPermissions: Partial<Record<ScreenId, PermissionKey>> = {
+  overview: 'screen.dashboard',
+  inventory: 'screen.inventory',
+  recommendations: 'screen.recommendations',
+  reports: 'screen.reports',
+  employees: 'screen.employees',
+  cost: 'screen.cost',
+  commission: 'screen.commission',
+  membership: 'screen.membership',
+  design: 'screen.design',
+  pricing: 'screen.pricing',
+}
+
 export default function App() {
   const [activeScreen, setActiveScreen] = useState<ScreenId>('overview')
+  useEffect(() => {
+    const routes: Partial<Record<string, ScreenId>> = {
+      reports: 'reports',
+      commission: 'commission',
+    }
+    const applyHash = () => {
+      const screen = routes[window.location.hash.replace(/^#/, '')]
+      if (screen) setActiveScreen(screen)
+    }
+    applyHash()
+    window.addEventListener('hashchange', applyHash)
+    return () => window.removeEventListener('hashchange', applyHash)
+  }, [])
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const viewAs = useAdminStore(state => state.viewAs)
   const employees = useAdminStore(state => state.employees)
@@ -95,10 +123,22 @@ export default function App() {
   const orders = useAdminStore(state => state.orders)
   const assignmentEvents = useAdminStore(state => state.assignmentEvents)
   const readNotificationIds = useAdminStore(state => state.readNotificationIds)
+  const rolePermissions = useAdminStore(state => state.rolePermissions)
   const setViewAs = useAdminStore(state => state.setViewAs)
   const resetDemoData = useAdminStore(state => state.resetDemoData)
   const employeeView = viewAs.startsWith('employee:')
-  const visibleNavigation = employeeView ? employeeNavigation : navigation
+  const selectedEmployeeId = employeeView
+    ? viewAs.slice('employee:'.length)
+    : ''
+  const effectiveRole: Role = employeeView
+    ? employees.find(employee => employee.id === selectedEmployeeId)?.role ?? 'Production Staff'
+    : viewAs === 'Admin' ? 'Admin' : 'Manager'
+  const adminNavigation = navigation.filter(item => {
+    if (item.id === 'notifications') return true
+    const permission = screenPermissions[item.id]
+    return permission ? hasPermission(effectiveRole, permission, rolePermissions) : false
+  })
+  const visibleNavigation = employeeView ? employeeNavigation : adminNavigation
   const visibleScreen = visibleNavigation.some(item => item.id === activeScreen)
     ? activeScreen
     : employeeView ? 'schedule' : 'overview'
@@ -113,9 +153,11 @@ export default function App() {
     employees,
     assignmentEvents,
   }).filter(item => !readNotificationIds.includes(item.id)).length
-  const selectedEmployeeId = viewAs.startsWith('employee:')
-    ? viewAs.slice('employee:'.length)
-    : ''
+  useEffect(() => {
+    if (!visibleNavigation.some(item => item.id === activeScreen)) {
+      setActiveScreen(visibleNavigation[0]?.id ?? (employeeView ? 'schedule' : 'overview'))
+    }
+  }, [activeScreen, employeeView, rolePermissions, viewAs])
 
   const handleViewAs = (nextView: string) => {
     let next: ViewAs
