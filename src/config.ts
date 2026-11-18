@@ -1,5 +1,15 @@
 import type { Tier } from "./types"
 
+export const DEMO_TODAY = "2026-11-06" // pinned demo date, same as the Admin Portal
+
+export function getToday(): string {
+  return DEMO_TODAY
+}
+
+export function getTodayTimestamp(now: Date = new Date()): string {
+  return `${getToday()}T${now.toISOString().slice(11)}`
+}
+
 export const SCAN_BASE_URL =
   typeof window === "undefined" ? "" : window.location.origin
 

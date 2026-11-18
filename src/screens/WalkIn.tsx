@@ -3,13 +3,14 @@ import { Button, Badge, Card, FieldLabel, Input, Select, LockIcon } from "../com
 import { money, SIZES } from "../components/billingView"
 import { useBillingStore } from "../store/billingStore"
 import { calculatePricing } from "../lib/billing"
+import { getToday } from "../config"
 import type { OrderLine } from "../types"
 
 const EMPTY_QTY = Object.fromEntries(SIZES.map((size) => [size, 0]))
 const DEFAULT_DEADLINE = (() => {
-  const date = new Date()
-  date.setDate(date.getDate() + 5)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+  const date = new Date(`${getToday()}T00:00:00.000Z`)
+  date.setUTCDate(date.getUTCDate() + 5)
+  return date.toISOString().slice(0, 10)
 })()
 
 export function WalkIn() {

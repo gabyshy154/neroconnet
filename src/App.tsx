@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react"
 import { Header } from "./components/Header"
-import { localToday } from "./components/billingView"
 import { Commission } from "./screens/Commission"
 import { Billing } from "./screens/Billing"
 import { Claim } from "./screens/Claim"
@@ -11,7 +10,7 @@ import { ProductionScan } from "./screens/ProductionScan"
 import { SignIn } from "./screens/SignIn"
 import { WalkIn } from "./screens/WalkIn"
 import { useBillingStore } from "./store/billingStore"
-import { isOrderOverdue, parseScanLink } from "./lib/billing"
+import { parseScanLink } from "./lib/billing"
 import { getScanVia, navigateToProductionScan } from "./lib/production"
 
 type Screen =
@@ -88,13 +87,6 @@ export default function App() {
     )
   }
 
-  const overdue = data.orders.filter((order) =>
-    isOrderOverdue(order, localToday()),
-  ).length
-  const activeOrders = data.orders.filter(
-    (order) => order.status !== "Claimed",
-  ).length
-
   return (
     <div className="app-shell">
       <Header
@@ -119,13 +111,6 @@ export default function App() {
               </button>
             ))}
           </nav>
-          <div className="sidebar-stats">
-            <span>Today’s shop view</span>
-            <div><strong>{activeOrders}</strong> Active</div>
-            <div className={overdue ? "text-red-300" : ""}>
-              <strong>{overdue}</strong> Overdue
-            </div>
-          </div>
           <details className="m-3 rounded-lg border border-stone-600 bg-[#252720] p-3 text-stone-100">
             <summary className="cursor-pointer text-xs font-bold uppercase tracking-wide">
               Dev menu

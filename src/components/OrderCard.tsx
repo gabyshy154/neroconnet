@@ -1,10 +1,11 @@
 import type { BillingData } from "../store/billingStore"
 import type { Order } from "../types"
 import { QRCodeSVG } from "qrcode.react"
-import { buildScanLink } from "../lib/billing"
+import { buildScanLink, isOrderOverdue } from "../lib/billing"
 import { navigateToProductionScan } from "../lib/production"
 import { Badge, Button } from "./ui"
-import { localToday, orderItemSummary, staffFor, STAGES } from "./billingView"
+import { getToday } from "../config"
+import { orderItemSummary, staffFor, STAGES } from "./billingView"
 
 export function OrderCard({
   order,
@@ -25,7 +26,7 @@ export function OrderCard({
     : currentStage
       ? STAGES.indexOf(currentStage)
       : -1
-  const overdue = order.deadline < localToday() && order.status !== "Claimed"
+  const overdue = isOrderOverdue(order, getToday())
 
   return (
     <article className={`production-card ${overdue ? "overdue" : ""}`}>

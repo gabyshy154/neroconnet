@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { Badge, Button, Card, FieldLabel, Input, Select } from "../components/ui"
 import { QRCodeSVG } from "qrcode.react"
 import { buildScanLink } from "../lib/billing"
+import { getToday } from "../config"
 import {
   calculatePricing,
   getRemainingBalance,
@@ -9,7 +10,6 @@ import {
 } from "../lib/billing"
 import {
   customerFor,
-  localToday,
   money,
   orderItemSummary,
   orderPaymentStatus,
@@ -206,7 +206,7 @@ export function Orders() {
                         </Badge>
                       </td>
                       <td>{order.claim?.method ?? "Not set"}</td>
-                      <td className={isOrderOverdue(order, localToday()) ? "font-bold text-red-800" : ""}>
+                      <td className={isOrderOverdue(order, getToday()) ? "font-bold text-red-800" : ""}>
                         {order.deadline}
                       </td>
                     </tr>

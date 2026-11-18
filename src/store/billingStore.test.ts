@@ -143,10 +143,10 @@ describe("demo seed data", () => {
     ).toBe(true)
 
     expect(
-      seedOrders.some((order) => isOrderOverdue(order, "2026-11-06")),
-    ).toBe(
-      true,
-    )
+      seedOrders
+        .filter((order) => isOrderOverdue(order, "2026-11-06"))
+        .map((order) => order.id),
+    ).toEqual(["NPS-20261106-004"])
 
     expect(
       seedOrders.some((order) => order.claim?.method === "Delivery"),
@@ -190,7 +190,7 @@ describe("demo seed data", () => {
 describe("billing store actions", () => {
   it("creates an order with a daily sequential ID and pending downpayment status", () => {
     const store = createBillingStore({
-      now: fixedNow,
+      now: () => new Date("2026-11-19T10:00:00.000Z"),
       storage: createMemoryStorage(),
     })
 
@@ -221,6 +221,7 @@ describe("billing store actions", () => {
     })
 
     expect(order.id).toBe("NPS-20261106-012")
+    expect(order.createdAt).toBe("2026-11-06T10:00:00.000Z")
 
     expect(order.status).toBe("Pending Downpayment")
 
@@ -286,7 +287,7 @@ describe("billing store actions", () => {
 
   it("validates payments, updates balances/status, and awards member points on full payment", () => {
     const store = createBillingStore({
-      now: fixedNow,
+      now: () => new Date("2026-11-19T10:00:00.000Z"),
       storage: createMemoryStorage(),
     })
 
@@ -336,7 +337,7 @@ describe("billing store actions", () => {
 
     const remaining = getRemainingBalance(originalOrder, total)
 
-    state.recordPayment(originalOrder.id, {
+    const payment = state.recordPayment(originalOrder.id, {
       method: "Bank Transfer",
 
       amount: remaining,
@@ -345,6 +346,8 @@ describe("billing store actions", () => {
 
       receiptIssued: true,
     })
+    expect(payment.id).toBe("PAY-20261106-001")
+    expect(payment.recordedAt).toBe("2026-11-06T10:00:00.000Z")
 
     const updated = store.getState()
 
@@ -425,7 +428,7 @@ describe("billing store actions", () => {
 
   it("blocks an unsettled claim and posts commission only after a fully paid claim", () => {
     const store = createBillingStore({
-      now: fixedNow,
+      now: () => new Date("2026-11-19T10:00:00.000Z"),
       storage: createMemoryStorage(),
     })
     const state = store.getState()
@@ -448,7 +451,13 @@ describe("billing store actions", () => {
       pieces: 5,
 
       amount: 100,
+
+      postedAt: "2026-11-06T10:00:00.000Z",
     })
+    expect(
+      store.getState().orders.find((order) => order.id === "NPS-20261106-007")
+        ?.claim?.claimedAt,
+    ).toBe("2026-11-06T10:00:00.000Z")
   })
 
   it("blocks a ready order with an outstanding balance and no approved credit term", () => {
@@ -558,15 +567,13 @@ describe("billing store actions", () => {
 
   it("enrolls eligible customers as Bronze with a generated NPC number", () => {
     const store = createBillingStore({
-      now: fixedNow,
+      now: () => new Date("2026-11-19T10:00:00.000Z"),
       storage: createMemoryStorage(),
     })
 
     const member = store
-
       .getState()
-
-      .enrollNpcMember("customer-005", "2026-11-06T10:00:00.000Z")
+      .enrollNpcMember("customer-005")
 
     expect(member).toMatchObject({
       npcNumber: "NPC-000105",
@@ -576,6 +583,8 @@ describe("billing store actions", () => {
       tier: "Bronze",
 
       points: 0,
+
+      joinedAt: "2026-11-06T10:00:00.000Z",
     })
 
     expect(
@@ -591,7 +600,7 @@ describe("billing store actions", () => {
   it("queues offline writes with timestamps and replays them in order", async () => {
     const replayed: string[] = []
     const store = createBillingStore({
-      now: fixedNow,
+      now: () => new Date("2026-11-19T10:00:00.000Z"),
       storage: createMemoryStorage(),
       syncQueuedAction: async (action) => {
         replayed.push(action.type)
@@ -657,7 +666,7 @@ describe("billing store actions", () => {
             orderId: order.id,
             stage: "Cutting",
             staffId: "staff-001",
-            at: "2026-11-06T10:00:00.000Z",
+            at: "2026-11-19T10:00:00.000Z",
             via: "Manual entry",
           }),
         ],
@@ -665,7 +674,7 @@ describe("billing store actions", () => {
     })
     expect(
       store.getState().queuedActions.every(
-        (action) => action.queuedAt === "2026-11-06T10:00:00.000Z",
+        (action) => action.queuedAt === "2026-11-19T10:00:00.000Z",
       ),
     ).toBe(true)
     expect(store.getState().queuedActions.map((action) => action.id)).toEqual([

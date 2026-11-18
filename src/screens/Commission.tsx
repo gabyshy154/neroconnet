@@ -1,13 +1,12 @@
 import { useState } from "react"
 import { Badge, Card } from "../components/ui"
 import { money, orderTotal } from "../components/billingView"
-import { BILLING_CONFIG } from "../config"
+import { BILLING_CONFIG, getToday } from "../config"
 import { getPaymentStatus } from "../lib/billing"
 import { useBillingStore } from "../store/billingStore"
 
 function localDateKey(value: string): string {
-  const date = new Date(value)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+  return value.slice(0, 10)
 }
 
 export function Commission() {
@@ -16,11 +15,11 @@ export function Commission() {
   const allStaff = useBillingStore((state) => state.staff)
   const staff = allStaff.filter((person) => person.isSalesPerson)
   const [period, setPeriod] = useState<"today" | "week">("today")
-  const now = new Date()
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
-  const weekStart = new Date(now)
-  weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7))
-  const start = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, "0")}-${String(weekStart.getDate()).padStart(2, "0")}`
+  const today = getToday()
+  const todayDate = new Date(`${today}T00:00:00.000Z`)
+  const weekStart = new Date(todayDate)
+  weekStart.setUTCDate(todayDate.getUTCDate() - ((todayDate.getUTCDay() + 6) % 7))
+  const start = weekStart.toISOString().slice(0, 10)
   const filtered = commissions.filter((entry) => {
     const order = data.orders.find((item) => item.id === entry.orderId)
     if (

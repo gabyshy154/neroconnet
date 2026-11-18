@@ -26,6 +26,7 @@ import {
   getProductionBlockMessage,
   getProductionBlockReason,
 } from "../lib/production"
+import { getToday, getTodayTimestamp } from "../config"
 
 import {
   seedCommissions,
@@ -338,9 +339,8 @@ function createBillingStoreState(
           throw new Error("An order must contain at least one line.")
         }
 
-        const createdAt = now().toISOString()
-
-        const date = createdAt.slice(0, 10)
+        const createdAt = getTodayTimestamp(now())
+        const date = getToday()
 
         const prefix = `NPS-${date.replace(/-/g, "")}-`
 
@@ -409,7 +409,7 @@ function createBillingStoreState(
                 state.queuedActions,
                 "createOrder",
                 order,
-                createdAt,
+                now().toISOString(),
               ),
               ]
             : state.queuedActions
@@ -485,7 +485,7 @@ function createBillingStoreState(
           throw new Error(`Staff member ${input.recordedBy} was not found.`)
         }
 
-        const recordedAt = input.recordedAt ?? now().toISOString()
+        const recordedAt = input.recordedAt ?? getTodayTimestamp(now())
 
         const payment: Payment = {
           id: createPaymentId(state.payments, recordedAt.slice(0, 10)),
@@ -565,7 +565,7 @@ function createBillingStoreState(
 
                 payment,
 
-                recordedAt,
+                now().toISOString(),
               ),
               ]
             : state.queuedActions
@@ -687,7 +687,7 @@ function createBillingStoreState(
           )
         }
 
-        const claimedAt = input.claimedAt ?? now().toISOString()
+        const claimedAt = input.claimedAt ?? getTodayTimestamp(now())
 
         const claimedOrder: Order = {
           ...order,
@@ -728,7 +728,7 @@ function createBillingStoreState(
 
                 claimedOrder,
 
-                claimedAt,
+                now().toISOString(),
               ),
               ]
             : state.queuedActions
@@ -746,7 +746,7 @@ function createBillingStoreState(
         return claimedOrder
       },
 
-      enrollNpcMember: (customerId, joinedAt = now().toISOString()) => {
+      enrollNpcMember: (customerId, joinedAt = getTodayTimestamp(now())) => {
         const state = get()
 
         const customer = state.customers.find((item) => item.id === customerId)

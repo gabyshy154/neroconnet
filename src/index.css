@@ -38,10 +38,6 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .sidebar nav button span { color: #6f7368; font-family: 'DM Mono', monospace; font-size: 9px; }
 .sidebar nav button.active { background: #667451; color: white; }
 .sidebar nav button.active span { color: #dce3d2; }
-.sidebar-stats { margin-top: auto; border-top: 1px solid #3a3d33; padding: 13px 10px 4px; color: #a7aa9f; font-size: 11px; }
-.sidebar-stats > span { display: block; margin-bottom: 8px; color: #6f7368; font-family: 'DM Mono', monospace; font-size: 9px; text-transform: uppercase; }
-.sidebar-stats div { display: flex; justify-content: space-between; margin-top: 5px; }
-.sidebar-stats strong { color: white; }
 main { min-width: 0; flex: 1; overflow: auto; padding: 18px; }
 .page-heading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 14px; }
 .page-heading h1 { margin: 2px 0 0; font-size: 20px; font-weight: 900; letter-spacing: -.02em; }
@@ -199,7 +195,6 @@ tfoot td:last-child { font-family: 'DM Mono', monospace; font-size: 16px; }
   .sidebar { width: 100%; padding: 6px; }
   .sidebar nav { flex-direction: row; overflow-x: auto; }
   .sidebar nav button { min-height: 44px; flex: none; white-space: nowrap; }
-  .sidebar-stats { display: none; }
   .sidebar details { margin: 6px !important; }
   main { overflow: visible; padding: 12px; }
   .page-heading { align-items: start; gap: 8px; }
