@@ -123,6 +123,34 @@ export function dailySeries<T>(
   return series
 }
 
+export interface CostProfitChartPoint {
+  date: string
+  sales: number
+  productionCost: number
+  grossProfit: number
+}
+
+/**
+ * Sales, production cost, and gross profit per completion day, with every day in the range
+ * present so empty days show as gaps instead of disappearing. No net profit (REQ-4.17).
+ */
+export function costProfitSeries(
+  rows: readonly { completedAt: string; sales: number; productionCost: number; grossProfit: number }[],
+  range: DateRange,
+): CostProfitChartPoint[] {
+  const pick = (key: 'sales' | 'productionCost' | 'grossProfit') =>
+    dailySeries(rows, range, row => row.completedAt, row => row[key])
+  const sales = pick('sales')
+  const productionCost = pick('productionCost')
+  const grossProfit = pick('grossProfit')
+  return sales.map((point, index) => ({
+    date: point.date,
+    sales: point.total,
+    productionCost: productionCost[index].total,
+    grossProfit: grossProfit[index].total,
+  }))
+}
+
 export interface ProductDemand {
   product: string
   pieces: number

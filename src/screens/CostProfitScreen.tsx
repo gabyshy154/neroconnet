@@ -1,19 +1,28 @@
 import { useMemo, useState } from 'react'
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { DEMO_TODAY } from '../config'
 import { EmptyState, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
 import { calculateCostAndProfit, formatCurrency, isFullyPaid } from '../lib/admin'
-import { filterByCompletedAtPeriod, type ReportingPeriod } from '../lib/reporting'
+import { costProfitSeries, filterByCompletedAtPeriod, getPeriodRange, type CostProfitChartPoint, type ReportingPeriod } from '../lib/reporting'
 import { useAdminStore } from '../store/adminStore'
 
 const periods: ReportingPeriod[] = ['Daily', 'Weekly', 'Monthly']
 const cellStyle: React.CSSProperties = { padding: '10px 12px', borderBottom: `1px solid ${screenColors.border}`, textAlign: 'left', fontSize: 12, whiteSpace: 'nowrap' }
 const emptyTotals = { sales: 0, productionCost: 0, grossProfit: 0, commission: 0 }
 
+function formatAxisCurrency(value: number): string {
+  const absolute = Math.abs(value)
+  const sign = value < 0 ? '-' : ''
+  if (absolute >= 1_000_000) return `${sign}₱${(absolute / 1_000_000).toFixed(1)}m`
+  if (absolute >= 1_000) return `${sign}₱${(absolute / 1_000).toFixed(1)}k`
+  return `${sign}₱${absolute.toFixed(0)}`
+}
+
 export default function CostProfitScreen() {
   const orders = useAdminStore(state => state.orders)
   const payouts = useAdminStore(state => state.commissionPayouts)
   const [period, setPeriod] = useState<ReportingPeriod>('Weekly')
-  const { calculations, totals, error } = useMemo(() => {
+  const { calculations, totals, chart, error } = useMemo((): { calculations: { order: { id: string; customer: string; completedAt: string; salePrice: number }; productionCost: number; grossProfit: number; commission: number }[]; totals: typeof emptyTotals; chart: CostProfitChartPoint[]; error: string } => {
     try {
       // REQ-4.17: only completed orders (claimed and paid in full) count toward cost and profit.
       const completed = filterByCompletedAtPeriod(orders, period, DEMO_TODAY)
@@ -28,11 +37,19 @@ export default function CostProfitScreen() {
         grossProfit: result.grossProfit + row.grossProfit,
         commission: result.commission + row.commission,
       }), emptyTotals)
-      return { calculations: rows, totals: summary, error: '' }
+      // A chart compares days, so the Daily view shows only the table.
+      const chart = period === 'Daily'
+        ? []
+        : costProfitSeries(
+            rows.map(row => ({ completedAt: row.order.completedAt, sales: row.order.salePrice, productionCost: row.productionCost, grossProfit: row.grossProfit })),
+            getPeriodRange(period, DEMO_TODAY),
+          )
+      return { calculations: rows, totals: summary, chart, error: '' }
     } catch (reason) {
       return {
         calculations: [],
         totals: emptyTotals,
+        chart: [],
         error: reason instanceof Error ? reason.message : 'Cost and profit data could not be calculated.',
       }
     }
@@ -57,6 +74,26 @@ export default function CostProfitScreen() {
         ? <EmptyState>No orders were completed in this period.</EmptyState>
         : (
           <>
+            {chart.length > 0 && (
+              <ScreenCard style={{ marginBottom: 16 }}>
+                <h2 style={{ margin: '0 0 12px', fontSize: 15, fontWeight: 600, color: screenColors.foreground }}>Completed sales and gross profit by completion date</h2>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={chart} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={screenColors.border} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11, fill: screenColors.muted }} tickFormatter={date => String(date).slice(5)} />
+                    <YAxis tick={{ fontSize: 11, fill: screenColors.muted }} tickFormatter={formatAxisCurrency} />
+                    <Tooltip formatter={value => formatCurrency(Number(value ?? 0))} />
+                    <Legend />
+                    <Bar dataKey="sales" name="Sales" fill="#6B7C5A" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="productionCost" name="Production Cost" fill="#A2A68F" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="grossProfit" name="Gross Profit" fill="#3F5A3A" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+                <p style={{ color: screenColors.muted, fontSize: 11, marginTop: 8 }}>
+                  Grouped by the date each order was claimed and paid in full. The Daily view shows the table only.
+                </p>
+              </ScreenCard>
+            )}
             <ScreenCard style={{ overflowX: 'auto', padding: 0 }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead><tr>{['Order', 'Customer', 'Completed', 'Sale', 'Production Cost', 'Gross Profit', 'Commission'].map(label => <th key={label} style={{ ...cellStyle, color: screenColors.muted, fontWeight: 600 }}>{label}</th>)}</tr></thead>

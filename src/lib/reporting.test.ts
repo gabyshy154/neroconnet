@@ -11,6 +11,7 @@ import {
   filterByPostedAtPeriod,
   getDailyOrderSales,
   getPeriodRange,
+  costProfitSeries,
 } from './reporting'
 
 describe('reporting period filters', () => {
@@ -118,6 +119,21 @@ describe('daily chart series', () => {
       { date: '2026-11-03', total: 0 },
       { date: '2026-11-04', total: 75 },
       { date: '2026-11-05', total: 0 },
+    ])
+  })
+})
+
+describe('Cost & Profit chart series', () => {
+  it('totals sales, production cost, and gross profit per completion day, filling empty days', () => {
+    const rows = [
+      { completedAt: '2026-11-02T09:00:00.000Z', sales: 1000, productionCost: 600, grossProfit: 400 },
+      { completedAt: '2026-11-02T15:00:00.000Z', sales: 500, productionCost: 200, grossProfit: 300 },
+      { completedAt: '2026-11-04T10:00:00.000Z', sales: 800, productionCost: 500, grossProfit: 300 },
+    ]
+    expect(costProfitSeries(rows, { from: '2026-11-02', to: '2026-11-04' })).toEqual([
+      { date: '2026-11-02', sales: 1500, productionCost: 800, grossProfit: 700 },
+      { date: '2026-11-03', sales: 0, productionCost: 0, grossProfit: 0 },
+      { date: '2026-11-04', sales: 800, productionCost: 500, grossProfit: 300 },
     ])
   })
 })
