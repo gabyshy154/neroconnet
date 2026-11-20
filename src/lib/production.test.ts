@@ -15,6 +15,17 @@ const order: Order = {
   rush: false,
   stage: "Printing/Sewing",
   status: "In Production",
+  designStatus: "Approved",
+  claim: { method: "Pick-up" },
+  pricing: {
+    totalPieces: 0,
+    subtotal: 0,
+    discounts: [],
+    totalDiscount: 0,
+    rushSurcharge: 0,
+    creditCharge: 0,
+    grandTotal: 0,
+  },
   payments: [],
   stageLog: [],
   createdAt: "2026-11-06T08:00:00.000Z",
@@ -40,8 +51,8 @@ describe("production station rules", () => {
     )
   })
 
-  it("blocks orders that have not started", () => {
-    const pendingOrder = { ...order, status: "Pending Downpayment" as const }
+  it("blocks orders that have not been released", () => {
+    const pendingOrder = { ...order, status: "Awaiting Release" as const }
 
     expect(getProductionBlockReason(pendingOrder, "Cutting")).toBe(
       "downpayment-required",
@@ -49,9 +60,15 @@ describe("production station rules", () => {
     expect(getProductionBlockMessage("downpayment-required")).toBe(
       "Record the downpayment before starting production.",
     )
+    expect(
+      getProductionBlockReason({ ...pendingOrder, designStatus: "Under Review" }, "Cutting"),
+    ).toBe("design-pending")
+    expect(getProductionBlockMessage("design-pending")).toBe(
+      "The design must be approved in the Admin Portal (Design Review) before production starts.",
+    )
   })
 
-  it.each(["Ready for Claim", "Claimed"] as const)(
+  it.each(["Ready for Pickup", "Ready for Delivery", "Claimed"] as const)(
     "blocks finished %s orders",
     (status) => {
       expect(

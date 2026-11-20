@@ -15,7 +15,6 @@ import {
 } from "../data/seed"
 
 import {
-  calculatePricing,
   getPaymentStatus,
   getRemainingBalance,
   isOrderOverdue,
@@ -41,22 +40,9 @@ function createMemoryStorage(): StateStorage {
   }
 }
 
+// Orders are billed from the breakdown saved when they were confirmed.
 function getTotal(order: Order): number {
-  const customer = seedCustomers.find((item) => item.id === order.customerId)
-
-  const member = seedNpcMembers.find(
-    (item) => item.npcNumber === customer?.npcNumber,
-  )
-
-  return calculatePricing({
-    lines: order.lines,
-
-    tier: member?.tier,
-
-    rush: order.rush,
-
-    creditTermDays: order.creditTermDays,
-  }).grandTotal
+  return order.pricing.grandTotal
 }
 
 function getSeedCommissionOrderIds(period: "today" | "week"): string[] {
@@ -92,10 +78,41 @@ describe("demo seed data", () => {
 
     expect(seedProductTypes).toHaveLength(6)
 
-    expect(seedOrders).toHaveLength(11)
+    expect(seedOrders).toHaveLength(13)
 
+    // Portal and counter members use separate prefixes (REQ-4.8-03).
     for (const member of seedNpcMembers) {
-      expect(member.npcNumber).toMatch(/^NPC-\d{6}$/)
+      expect(member.npcNumber).toMatch(/^NPC-[PB]-\d{6}$/)
+    }
+    expect(new Set(seedNpcMembers.map((item) => item.npcNumber.slice(0, 5)))).toEqual(
+      new Set(["NPC-P", "NPC-B"]),
+    )
+
+    // Seed tiers match the point thresholds.
+    expect(seedNpcMembers.map((item) => [item.tier, item.points])).toEqual([
+      ["Bronze", 12],
+      ["Silver", 46],
+      ["Gold", 72],
+      ["Platinum", 305],
+    ])
+
+    // Only released orders have approved designs or production stages.
+    for (const order of seedOrders) {
+      if (order.status === "Awaiting Release") {
+        expect(order.stage).toBeUndefined()
+      } else {
+        expect(order.designStatus).toBe("Approved")
+      }
+    }
+    expect(
+      seedOrders.some(
+        (order) => order.status === "Awaiting Release" && order.payments.length > 0,
+      ),
+    ).toBe(true)
+
+    // GCash and bank transfers carry a reference code.
+    for (const payment of seedPayments) {
+      if (payment.method !== "Cash") expect(payment.referenceCode).toBeTruthy()
     }
 
     for (const order of seedOrders) {
@@ -114,18 +131,20 @@ describe("demo seed data", () => {
       new Set(seedOrders.map((order) => order.status)),
     ).toEqual(
       new Set([
-        "Pending Downpayment",
+        "Awaiting Release",
 
         "In Production",
 
-        "Ready for Claim",
+        "Ready for Pickup",
+
+        "Ready for Delivery",
 
         "Claimed",
       ]),
     )
 
     expect(
-      seedOrders.some((order) => order.status === "Pending Downpayment"),
+      seedOrders.some((order) => order.status === "Awaiting Release"),
     ).toBe(
       true,
     )
@@ -188,7 +207,7 @@ describe("demo seed data", () => {
 })
 
 describe("billing store actions", () => {
-  it("creates an order with a daily sequential ID and pending downpayment status", () => {
+  it("creates an order with a daily sequential ID, awaiting release, with its price locked", () => {
     const store = createBillingStore({
       now: () => new Date("2026-11-19T10:00:00.000Z"),
       storage: createMemoryStorage(),
@@ -218,12 +237,32 @@ describe("billing store actions", () => {
       rush: true,
 
       creditTermDays: 15,
+
+      claimMethod: "Delivery",
+
+      deliveryAddress: "Tipolo, Mandaue City",
     })
 
-    expect(order.id).toBe("NPS-20261106-012")
+    expect(order.id).toBe("NPS-20261106-014")
     expect(order.createdAt).toBe("2026-11-06T10:00:00.000Z")
 
-    expect(order.status).toBe("Pending Downpayment")
+    expect(order.status).toBe("Awaiting Release")
+
+    expect(order.designStatus).toBe("Under Review")
+
+    expect(order.claim).toEqual({ method: "Delivery", deliveryAddress: "Tipolo, Mandaue City" })
+
+    expect(order.pricing.grandTotal).toBeGreaterThan(0)
+
+    expect(() =>
+      store.getState().createOrder({
+        customerId: "customer-005",
+        salesPersonId: "staff-001",
+        lines: order.lines,
+        deadline: "2026-11-12",
+        claimMethod: "Delivery",
+      }),
+    ).toThrow("delivery address is required")
 
     expect(order.stage).toBeUndefined()
 
@@ -252,11 +291,12 @@ describe("billing store actions", () => {
         },
       ],
       deadline: "2026-11-12",
+      claimMethod: "Pick-up",
     })
     expect(order.lines[0].pricePerPiece).toBe(420)
   })
 
-  it("validates and adds a customer, and checks the mock staff PIN format", () => {
+  it("validates and adds a customer, and signs staff in by email or name with a password", () => {
     const store = createBillingStore({
       now: fixedNow,
       storage: createMemoryStorage(),
@@ -276,11 +316,17 @@ describe("billing store actions", () => {
       }),
     ).toThrow("already belongs")
 
-    expect(() => store.getState().signIn("staff-001", "123")).toThrow(
-      "4–6 digit",
+    expect(() => store.getState().signIn("nobody@neroconnect.local", "password123")).toThrow(
+      "No staff account",
     )
-    store.getState().signIn("staff-001", "1234")
+    expect(() => store.getState().signIn("rina.flores@neroconnect.local", "short")).toThrow(
+      "at least 8 characters",
+    )
+    store.getState().signIn("  Rina.Flores@NeroConnect.local ", "password123")
     expect(store.getState().signedInStaffId).toBe("staff-001")
+    store.getState().signOut()
+    store.getState().signIn("mark bautista", "password123")
+    expect(store.getState().signedInStaffId).toBe("staff-002")
     store.getState().signOut()
     expect(store.getState().signedInStaffId).toBeNull()
   })
@@ -337,6 +383,15 @@ describe("billing store actions", () => {
 
     const remaining = getRemainingBalance(originalOrder, total)
 
+    expect(() =>
+      state.recordPayment(originalOrder.id, {
+        method: "Bank Transfer",
+        amount: remaining,
+        recordedBy: "staff-001",
+        receiptIssued: true,
+      }),
+    ).toThrow("reference code")
+
     const payment = state.recordPayment(originalOrder.id, {
       method: "Bank Transfer",
 
@@ -344,8 +399,11 @@ describe("billing store actions", () => {
 
       recordedBy: "staff-001",
 
+      referenceCode: "  BDO-778812 ",
+
       receiptIssued: true,
     })
+    expect(payment.referenceCode).toBe("BDO-778812")
     expect(payment.id).toBe("PAY-20261106-001")
     expect(payment.recordedAt).toBe("2026-11-06T10:00:00.000Z")
 
@@ -362,9 +420,51 @@ describe("billing store actions", () => {
     expect(getPaymentStatus(paidOrder, total)).toBe("Paid in Full")
 
     expect(
-      updated.npcMembers.find((item) => item.npcNumber === "NPC-000101")
+      updated.npcMembers.find((item) => item.npcNumber === "NPC-P-000101")
         ?.points,
     ).toBe(17)
+  })
+
+  it("keeps the order's locked total when the customer's tier changes later", () => {
+    const store = createBillingStore({ now: fixedNow, storage: createMemoryStorage() })
+    const before = store.getState().orders.find((item) => item.id === "NPS-20261106-001")!
+    store.getState().enrollNpcMember("customer-005")
+    const after = store.getState().orders.find((item) => item.id === "NPS-20261106-001")!
+    expect(after.pricing.grandTotal).toBe(before.pricing.grandTotal)
+    expect(after.pricing.tier).toBeUndefined()
+  })
+
+  it("upgrades the NPC tier when credited points reach the next threshold", () => {
+    const store = createBillingStore({ now: fixedNow, storage: createMemoryStorage() })
+    store.setState((state) => ({
+      npcMembers: state.npcMembers.map((member) =>
+        member.npcNumber === "NPC-P-000101" ? { ...member, points: 18 } : member,
+      ),
+    }))
+    const order = store.getState().orders.find((item) => item.id === "NPS-20261106-002")!
+    store.getState().recordPayment(order.id, {
+      method: "Cash",
+      amount: getRemainingBalance(order, getTotal(order)),
+      recordedBy: "staff-001",
+      receiptIssued: false,
+    })
+    expect(
+      store.getState().npcMembers.find((item) => item.npcNumber === "NPC-P-000101"),
+    ).toMatchObject({ points: 23, tier: "Silver" })
+  })
+
+  it("releases an order only when the design is approved and a downpayment is recorded", () => {
+    const store = createBillingStore({ now: fixedNow, storage: createMemoryStorage() })
+    // Downpayment recorded, design still needs revision.
+    expect(() =>
+      store.getState().advanceOrderStage("NPS-20261106-012", "Cutting", "staff-001", "Manual entry"),
+    ).toThrow("Design Review")
+    const released = store.getState().simulateDesignApproval("NPS-20261106-012")
+    expect(released).toMatchObject({ designStatus: "Approved", status: "In Production" })
+    // Approved design but no downpayment yet.
+    const unpaid = store.getState().simulateDesignApproval("NPS-20261106-001")
+    expect(unpaid.status).toBe("Awaiting Release")
+    expect(() => store.getState().simulateDesignApproval("NPS-20261106-001")).toThrow("already approved")
   })
 
   it("advances production one step at a time and rejects unpaid orders", () => {
@@ -382,7 +482,7 @@ describe("billing store actions", () => {
         "staff-001",
         "Manual entry",
       ),
-    ).toThrow("Record the downpayment before starting production.")
+    ).toThrow("Design Review")
 
     const firstAdvance = state.advanceOrderStage(
       "NPS-20261106-002",
@@ -423,7 +523,7 @@ describe("billing store actions", () => {
         "staff-001",
         "Manual entry",
       ).status,
-    ).toBe("Ready for Claim")
+    ).toBe("Ready for Pickup")
   })
 
   it("blocks an unsettled claim and posts commission only after a fully paid claim", () => {
@@ -485,7 +585,44 @@ describe("billing store actions", () => {
     ).toThrow("Remaining balance must be settled before release.")
     expect(
       store.getState().orders.find((order) => order.id === orderId)?.status,
-    ).toBe("Ready for Claim")
+    ).toBe("Ready for Pickup")
+  })
+
+  it("switches a ready order between pick-up and delivery before release", () => {
+    const store = createBillingStore({ now: fixedNow, storage: createMemoryStorage() })
+    expect(() =>
+      store.getState().changeClaimMethod("NPS-20261106-007", "Delivery", " "),
+    ).toThrow("delivery address is required")
+    const delivery = store
+      .getState()
+      .changeClaimMethod("NPS-20261106-007", "Delivery", " Basak, Mandaue City ")
+    expect(delivery).toMatchObject({
+      status: "Ready for Delivery",
+      claim: { method: "Delivery", deliveryAddress: "Basak, Mandaue City" },
+    })
+    const pickup = store.getState().changeClaimMethod("NPS-20261106-007", "Pick-up")
+    expect(pickup).toMatchObject({ status: "Ready for Pickup", claim: { method: "Pick-up" } })
+    expect(pickup.claim.deliveryAddress).toBeUndefined()
+    // In production: only the method changes.
+    expect(
+      store.getState().changeClaimMethod("NPS-20261106-002", "Delivery", "Looc, Mandaue City").status,
+    ).toBe("In Production")
+    expect(() =>
+      store.getState().changeClaimMethod("NPS-20261106-008", "Pick-up"),
+    ).toThrow("already been claimed")
+  })
+
+  it("releases a fully paid delivery order and posts its commission", () => {
+    const store = createBillingStore({ now: fixedNow, storage: createMemoryStorage() })
+    const claimed = store.getState().claimOrder({
+      orderId: "NPS-20261106-013",
+      method: "Delivery",
+      deliveryAddress: "Unit 3B, Alang-Alang, Mandaue City, Cebu",
+    })
+    expect(claimed).toMatchObject({ status: "Claimed", claim: { method: "Delivery" } })
+    expect(
+      store.getState().commissions.find((item) => item.orderId === "NPS-20261106-013"),
+    ).toMatchObject({ salesPersonId: "staff-003", pieces: 6, amount: 120 })
   })
 
   it("requires a delivery address before claiming an order", () => {
@@ -576,7 +713,7 @@ describe("billing store actions", () => {
       .enrollNpcMember("customer-005")
 
     expect(member).toMatchObject({
-      npcNumber: "NPC-000105",
+      npcNumber: "NPC-B-000105",
 
       customerId: "customer-005",
 
@@ -590,7 +727,7 @@ describe("billing store actions", () => {
     expect(
       store.getState().customers.find((item) => item.id === "customer-005")
         ?.npcNumber,
-    ).toBe("NPC-000105")
+    ).toBe("NPC-B-000105")
 
     expect(() => store.getState().enrollNpcMember("customer-001")).toThrow(
       "already an NPC member",
@@ -629,7 +766,11 @@ describe("billing store actions", () => {
       ],
 
       deadline: "2026-11-12",
+
+      claimMethod: "Pick-up",
     })
+
+    store.getState().simulateDesignApproval(order.id)
 
     store.getState().recordPayment(order.id, {
       method: "Cash",
@@ -649,15 +790,16 @@ describe("billing store actions", () => {
       method: "Pick-up",
     })
 
-    expect(store.getState().orders).toHaveLength(12)
+    expect(store.getState().orders).toHaveLength(14)
     expect(store.getState().queuedActions.map((action) => action.type)).toEqual([
       "createOrder",
+      "designApproved",
       "recordPayment",
       "advanceStage",
       "enrollNpcMember",
       "claimOrder",
     ])
-    expect(store.getState().queuedActions[2].payload).toMatchObject({
+    expect(store.getState().queuedActions[3].payload).toMatchObject({
       orderId: order.id,
       order: {
         stage: "Printing/Sewing",
@@ -683,12 +825,14 @@ describe("billing store actions", () => {
       "QUEUE-000003",
       "QUEUE-000004",
       "QUEUE-000005",
+      "QUEUE-000006",
     ])
 
     await store.getState().setOnline(true)
 
     expect(replayed).toEqual([
       "createOrder",
+      "designApproved",
       "recordPayment",
       "advanceStage",
       "enrollNpcMember",
@@ -719,6 +863,7 @@ describe("billing store actions", () => {
         },
       ],
       deadline: "2026-11-12",
+      claimMethod: "Pick-up",
     })
     firstStore.getState().enrollNpcMember("customer-005")
 
@@ -732,7 +877,7 @@ describe("billing store actions", () => {
         .getState()
 
         .customers.find((item) => item.id === "customer-005")?.npcNumber,
-    ).toBe("NPC-000105")
+    ).toBe("NPC-B-000105")
     expect(restoredStore.getState().queuedActions).toHaveLength(2)
     expect(restoredStore.getState().isOnline).toBe(false)
 
@@ -745,7 +890,7 @@ describe("billing store actions", () => {
     expect(restoredStore.getState().queuedActions).toEqual([])
 
     const resetStore = createBillingStore({ now: fixedNow, storage })
-    expect(resetStore.getState().orders).toHaveLength(11)
+    expect(resetStore.getState().orders).toHaveLength(13)
     expect(resetStore.getState().commissions).toHaveLength(4)
   })
 })

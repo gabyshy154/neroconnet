@@ -6,7 +6,38 @@ export type PaymentMethod = "Cash" | "GCash" | "Bank Transfer"
 
 export type PaymentStatus = "Unpaid" | "Partially Paid" | "Paid in Full"
 
-export type OrderStatus = "Pending Downpayment" | "In Production" | "Ready for Claim" | "Claimed"
+// Same lifecycle as the Admin Portal (REQ-4.11-06): an order is released for production only
+// with an approved design and a recorded downpayment (BR-07, BR-03).
+export type OrderStatus =
+  | "Awaiting Release"
+  | "In Production"
+  | "Ready for Pickup"
+  | "Ready for Delivery"
+  | "Claimed"
+
+// Set by the Admin Portal's Design Review (REQ-4.3-04).
+export type DesignStatus = "Under Review" | "Revision Required" | "Approved"
+
+export type ClaimMethod = "Pick-up" | "Delivery"
+
+/** The price breakdown saved when the order is created; later tier or price changes never alter it. */
+export interface LockedPricing {
+  tier?: Tier
+
+  totalPieces: number
+
+  subtotal: number
+
+  discounts: { label: string; amount: number }[]
+
+  totalDiscount: number
+
+  rushSurcharge: number
+
+  creditCharge: number
+
+  grandTotal: number
+}
 
 export interface StageLogEntry {
   orderId: string
@@ -34,6 +65,9 @@ export interface Staff {
   id: string
 
   name: string
+
+  /** Same staff account email as the Admin Portal's User Management. */
+  email: string
 
   isSalesPerson: boolean
 }
@@ -91,6 +125,10 @@ export interface Payment {
 
   recordedAt: string
 
+  /** GCash / bank reference code (REQ-4.6-03, REQ-4.7-03); optional for cash. */
+  referenceCode?: string
+
+  /** Non-VAT Sales Invoice issued for this payment (REQ-4.7-03). */
   receiptIssued: boolean
 }
 
@@ -113,13 +151,18 @@ export interface Order {
 
   status: OrderStatus
 
-  claim?: {
-    method: "Pick-up" | "Delivery"
+  designStatus: DesignStatus
+
+  /** Chosen when the order is confirmed (REQ-4.7-04); claimedAt is set on release. */
+  claim: {
+    method: ClaimMethod
 
     deliveryAddress?: string
 
     claimedAt?: string
   }
+
+  pricing: LockedPricing
 
   payments: Payment[]
 

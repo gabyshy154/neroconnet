@@ -1,12 +1,15 @@
 import {
   BILLING_CONFIG,
+  NPC_PREFIX_BILLING,
   SCAN_BASE_URL,
   type BillingConfig,
 } from "../config"
 
 import type {
   CommissionEntry,
+  LockedPricing,
   Order,
+  OrderStatus,
   OrderLine,
   PaymentStatus,
   Stage,
@@ -42,7 +45,12 @@ export interface PricingBreakdown {
 export type AdvanceStageResult = { ok: true; order: Order } | {
   ok: false
 
-  reason: "downpayment-required" | "already-ready" | "already-claimed" | "invalid-status"
+  reason:
+    | "design-pending"
+    | "downpayment-required"
+    | "already-ready"
+    | "already-claimed"
+    | "invalid-status"
 }
 
 export type ClaimReleaseResult = { allowed: true; remainingBalance: number } | {
@@ -174,6 +182,14 @@ export function calculatePricing(
   }
 }
 
+/** Computes the breakdown once, when the order is confirmed, and keeps it with the order. */
+export function lockPricing(
+  input: PricingInput,
+  config: BillingConfig = BILLING_CONFIG,
+): LockedPricing {
+  return { tier: input.tier, ...calculatePricing(input, config) }
+}
+
 export function getPaidTotal(order: Order): number {
   return roundMoney(
     order.payments.reduce((total, payment) => {
@@ -222,8 +238,42 @@ export function validatePaymentAmount(
   return remainingBalance
 }
 
-function hasRecordedDownpayment(order: Order): boolean {
-  return getPaidTotal(order) > 0 && order.status !== "Pending Downpayment"
+const READY_STATUSES: readonly OrderStatus[] = ["Ready for Pickup", "Ready for Delivery"]
+
+export function isReadyForClaim(status: OrderStatus): boolean {
+  return READY_STATUSES.includes(status)
+}
+
+/** Ready for Pickup or Ready for Delivery, from the claim method chosen at order entry. */
+export function readyStatusFor(order: Pick<Order, "claim">): OrderStatus {
+  return order.claim.method === "Delivery" ? "Ready for Delivery" : "Ready for Pickup"
+}
+
+/**
+ * What still stops an order from being released for production. Release needs an approved
+ * design (BR-07, set in the Admin Portal's Design Review) and a recorded downpayment.
+ */
+export function getReleaseBlockers(order: Order): ("design-pending" | "downpayment-required")[] {
+  const blockers: ("design-pending" | "downpayment-required")[] = []
+  if (order.designStatus !== "Approved") blockers.push("design-pending")
+  if (getPaidTotal(order) <= 0) blockers.push("downpayment-required")
+  return blockers
+}
+
+export const RELEASE_BLOCKER_MESSAGES = {
+  "design-pending":
+    "The design must be approved in the Admin Portal (Design Review) before production starts.",
+  "downpayment-required": "Record the downpayment before starting production.",
+} as const
+
+/**
+ * Moves an Awaiting Release order into production once nothing blocks it. Inventory is
+ * deducted at this moment, never when the order is created (BR-03).
+ */
+export function releaseIfReady(order: Order): Order {
+  return order.status === "Awaiting Release" && getReleaseBlockers(order).length === 0
+    ? { ...order, status: "In Production" }
+    : order
 }
 
 export function advanceStage(order: Order): AdvanceStageResult {
@@ -231,15 +281,12 @@ export function advanceStage(order: Order): AdvanceStageResult {
     return { ok: false, reason: "already-claimed" }
   }
 
-  if (order.status === "Ready for Claim") {
+  if (isReadyForClaim(order.status)) {
     return { ok: false, reason: "already-ready" }
   }
 
-  if (
-    order.status === "Pending Downpayment" ||
-    !hasRecordedDownpayment(order)
-  ) {
-    return { ok: false, reason: "downpayment-required" }
+  if (order.status === "Awaiting Release") {
+    return { ok: false, reason: getReleaseBlockers(order)[0] ?? "invalid-status" }
   }
 
   if (order.status !== "In Production") {
@@ -258,7 +305,7 @@ export function advanceStage(order: Order): AdvanceStageResult {
     return {
       ok: true,
 
-      order: { ...order, status: "Ready for Claim" },
+      order: { ...order, status: readyStatusFor(order) },
     }
   }
 
@@ -276,7 +323,7 @@ export function validateClaimRelease(
 ): ClaimReleaseResult {
   const remainingBalance = getRemainingBalance(order, grandTotal)
 
-  if (order.status !== "Ready for Claim") {
+  if (!isReadyForClaim(order.status)) {
     return { allowed: false, reason: "not-ready", remainingBalance }
   }
 
@@ -322,6 +369,23 @@ export function calculateNpcPoints(paidTotal: number): number {
   return Math.floor(paidTotal / BILLING_CONFIG.npcPointsPerPeso)
 }
 
+const TIER_ORDER: readonly Tier[] = ["Bronze", "Silver", "Gold", "Platinum"]
+
+/** The highest tier whose point threshold the member has reached (REQ-4.8-06). */
+export function tierForPoints(
+  points: number,
+  thresholds: Record<Tier, number> = BILLING_CONFIG.tierPointThresholds,
+): Tier {
+  validateNonNegativeFinite(points, "Points")
+  return [...TIER_ORDER].reverse().find((tier) => points >= thresholds[tier]) ?? "Bronze"
+}
+
+/** Upgrades only: a tier the Admin set manually is never lowered by the points rule. */
+export function upgradedTier(current: Tier, points: number): Tier {
+  const earned = tierForPoints(points)
+  return TIER_ORDER.indexOf(earned) > TIER_ORDER.indexOf(current) ? earned : current
+}
+
 export function generateOrderId(date: Date | string, sequence: number): string {
   if (!Number.isInteger(sequence) || sequence < 1 || sequence > 999) {
     throw new RangeError("Order sequence must be an integer from 1 to 999.")
@@ -351,7 +415,7 @@ export function generateNpcNumber(sequence: number): string {
     throw new RangeError("NPC sequence must be an integer from 1 to 999999.")
   }
 
-  return `NPC-${String(sequence).padStart(6, "0")}`
+  return `${NPC_PREFIX_BILLING}-${String(sequence).padStart(6, "0")}`
 }
 
 export function buildScanLink(orderId: string): string {
@@ -390,6 +454,15 @@ export function parseScanLink(text: string): string | undefined {
 
 export function isOrderOverdue(order: Order, today: string): boolean {
   return order.deadline < today && order.status !== "Claimed"
+}
+
+/**
+ * Phone numbers are personal data (RA 10173, Data Privacy Act), so screens show only the last
+ * four digits. Searching by the full number still works because staff type it themselves.
+ */
+export function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "")
+  return digits.length >= 4 ? `••• ••• ${digits.slice(-4)}` : "•••"
 }
 
 export function isValidPhPhone(phone: string): boolean {

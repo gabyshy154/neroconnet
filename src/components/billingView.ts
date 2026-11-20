@@ -1,5 +1,4 @@
 import {
-  calculatePricing,
   getPaymentStatus,
   getTotalPieces,
   parseScanLink,
@@ -54,21 +53,13 @@ export function orderPieces(order: Order): number {
   return getTotalPieces(order.lines)
 }
 
-export function orderTotal(data: BillingData, order: Order): number {
-  const customer = customerFor(data, order.customerId)
-  const member = data.npcMembers.find(
-    (item) => item.npcNumber === customer?.npcNumber,
-  )
-  return calculatePricing({
-    lines: order.lines,
-    tier: member?.tier,
-    rush: order.rush,
-    creditTermDays: order.creditTermDays,
-  }).grandTotal
+/** The total saved when the order was confirmed; later tier or price changes never alter it. */
+export function orderTotal(order: Order): number {
+  return order.pricing.grandTotal
 }
 
-export function orderPaymentStatus(data: BillingData, order: Order) {
-  return getPaymentStatus(order, orderTotal(data, order))
+export function orderPaymentStatus(order: Order) {
+  return getPaymentStatus(order, orderTotal(order))
 }
 
 export function orderItemSummary(data: BillingData, order: Order): string {

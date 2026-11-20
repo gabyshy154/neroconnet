@@ -4,9 +4,11 @@ import { QRCodeSVG } from "qrcode.react"
 import { buildScanLink } from "../lib/billing"
 import { getToday } from "../config"
 import {
-  calculatePricing,
   getRemainingBalance,
   isOrderOverdue,
+  maskPhone,
+  RELEASE_BLOCKER_MESSAGES,
+  getReleaseBlockers,
 } from "../lib/billing"
 import {
   customerFor,
@@ -21,9 +23,10 @@ import { useBillingStore } from "../store/billingStore"
 import type { OrderStatus } from "../types"
 
 const ORDER_STATUSES: OrderStatus[] = [
-  "Pending Downpayment",
+  "Awaiting Release",
   "In Production",
-  "Ready for Claim",
+  "Ready for Pickup",
+  "Ready for Delivery",
   "Claimed",
 ]
 type SortKey =
@@ -38,6 +41,8 @@ type SortKey =
 
 export function Orders() {
   const data = useBillingStore((state) => state)
+  const simulateDesignApproval = useBillingStore((state) => state.simulateDesignApproval)
+  const [drawerMessage, setDrawerMessage] = useState("")
   const [search, setSearch] = useState("")
   const [status, setStatus] = useState("All")
   const [customerId, setCustomerId] = useState("All")
@@ -78,9 +83,9 @@ export function Orders() {
             case "status":
               return order.status
             case "paymentStatus":
-              return orderPaymentStatus(data, order)
+              return orderPaymentStatus(order)
             case "claimMethod":
-              return order.claim?.method ?? ""
+              return order.claim.method
             case "deadline":
               return order.deadline
             default:
@@ -101,18 +106,8 @@ export function Orders() {
       setSortAscending(true)
     }
   }
-  const selectedPricing = selectedOrder
-    ? calculatePricing({
-        lines: selectedOrder.lines,
-        tier: data.npcMembers.find(
-          (item) =>
-            item.npcNumber ===
-            customerFor(data, selectedOrder.customerId)?.npcNumber,
-        )?.tier,
-        rush: selectedOrder.rush,
-        creditTermDays: selectedOrder.creditTermDays,
-      })
-    : undefined
+  // The breakdown saved when the order was confirmed.
+  const selectedPricing = selectedOrder?.pricing
 
   return (
     <div className="space-y-4">
@@ -178,7 +173,7 @@ export function Orders() {
               <tbody>
                 {rows.map((order) => {
                   const customer = customerFor(data, order.customerId)
-                  const paymentStatus = orderPaymentStatus(data, order)
+                  const paymentStatus = orderPaymentStatus(order)
                   return (
                     <tr
                       key={order.id}
@@ -190,12 +185,15 @@ export function Orders() {
                           setSelectedId(order.id)
                         }
                       }}
-                      onClick={() => setSelectedId(order.id)}
+                      onClick={() => {
+                        setSelectedId(order.id)
+                        setDrawerMessage("")
+                      }}
                     >
                       <td><strong>{order.id}</strong></td>
                       <td>
                         <strong>{customer?.name}</strong>
-                        <small className="block text-stone-500">{customer?.phone}</small>
+                        <small className="block text-stone-500">{customer ? maskPhone(customer.phone) : ""}</small>
                       </td>
                       <td>{orderItemSummary(data, order)}</td>
                       <td>{staffFor(data, order.salesPersonId)?.name}</td>
@@ -205,7 +203,7 @@ export function Orders() {
                           {paymentStatus}
                         </Badge>
                       </td>
-                      <td>{order.claim?.method ?? "Not set"}</td>
+                      <td>{order.claim.method}</td>
                       <td className={isOrderOverdue(order, getToday()) ? "font-bold text-red-800" : ""}>
                         {order.deadline}
                       </td>
@@ -255,11 +253,18 @@ export function Orders() {
             </div>
             <dl className="detail-list">
               <div><dt>Customer</dt><dd>{customerFor(data, selectedOrder.customerId)?.name}</dd></div>
-              <div><dt>Phone</dt><dd>{customerFor(data, selectedOrder.customerId)?.phone}</dd></div>
+              <div><dt>Phone</dt><dd>{maskPhone(customerFor(data, selectedOrder.customerId)?.phone ?? "")}</dd></div>
               <div><dt>NPC number</dt><dd>{customerFor(data, selectedOrder.customerId)?.npcNumber ?? "—"}</dd></div>
               <div><dt>Items / Quantity</dt><dd>{orderItemSummary(data, selectedOrder)}</dd></div>
               <div><dt>Sales person</dt><dd>{staffFor(data, selectedOrder.salesPersonId)?.name}</dd></div>
               <div><dt>Status</dt><dd>{selectedOrder.status}</dd></div>
+              <div>
+                <dt>Design</dt>
+                <dd>
+                  {selectedOrder.designStatus}
+                  <small className="block text-stone-500">Reviewed in the Admin Portal (Design Review)</small>
+                </dd>
+              </div>
               <div><dt>Stage</dt><dd>{selectedOrder.stage ?? "Not started"}</dd></div>
               <div><dt>Deadline</dt><dd>{selectedOrder.deadline}</dd></div>
               <div><dt>Created</dt><dd>{new Date(selectedOrder.createdAt).toLocaleString("en-PH")}</dd></div>
@@ -291,16 +296,47 @@ export function Orders() {
               {Boolean(selectedPricing?.creditCharge) && (
                 <div><dt>Credit charge</dt><dd>{money(selectedPricing?.creditCharge ?? 0)}</dd></div>
               )}
-              <div><dt>Order total</dt><dd>{money(orderTotal(data, selectedOrder))}</dd></div>
+              {selectedPricing?.tier && (
+                <div><dt>NPC tier at order time</dt><dd>{selectedPricing.tier}</dd></div>
+              )}
+              <div><dt>Order total</dt><dd>{money(orderTotal(selectedOrder))}</dd></div>
               <div><dt>Amount paid</dt><dd>{money(selectedOrder.payments.reduce((sum, payment) => sum + payment.amount, 0))}</dd></div>
-              <div><dt>Remaining balance</dt><dd>{money(getRemainingBalance(selectedOrder, orderTotal(data, selectedOrder)))}</dd></div>
-              <div><dt>Payment status</dt><dd>{orderPaymentStatus(data, selectedOrder)}</dd></div>
-              <div><dt>Claim method</dt><dd>{selectedOrder.claim?.method ?? "Not set"}</dd></div>
-              <div><dt>Claimed at</dt><dd>{selectedOrder.claim?.claimedAt ? new Date(selectedOrder.claim.claimedAt).toLocaleString("en-PH") : "—"}</dd></div>
-              {selectedOrder.claim?.deliveryAddress && (
+              <div><dt>Remaining balance</dt><dd>{money(getRemainingBalance(selectedOrder, orderTotal(selectedOrder)))}</dd></div>
+              <div><dt>Payment status</dt><dd>{orderPaymentStatus(selectedOrder)}</dd></div>
+              <div><dt>Claim method</dt><dd>{selectedOrder.claim.method}</dd></div>
+              <div><dt>Claimed at</dt><dd>{selectedOrder.claim.claimedAt ? new Date(selectedOrder.claim.claimedAt).toLocaleString("en-PH") : "—"}</dd></div>
+              {selectedOrder.claim.deliveryAddress && (
                 <div><dt>Delivery address</dt><dd>{selectedOrder.claim.deliveryAddress}</dd></div>
               )}
             </dl>
+            {selectedOrder.status === "Awaiting Release" && (
+              <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
+                <strong>Not yet released for production</strong>
+                <ul className="mt-1 space-y-1 text-xs">
+                  {getReleaseBlockers(selectedOrder).map((blocker) => (
+                    <li key={blocker}>• {RELEASE_BLOCKER_MESSAGES[blocker]}</li>
+                  ))}
+                </ul>
+                {selectedOrder.designStatus !== "Approved" && (
+                  <Button
+                    type="button"
+                    tone="secondary"
+                    className="mt-3"
+                    onClick={() => {
+                      const updated = simulateDesignApproval(selectedOrder.id)
+                      setDrawerMessage(
+                        updated.status === "In Production"
+                          ? "Design approved. Released for production. Materials deducted from inventory."
+                          : "Design approved. Record the downpayment to release the order.",
+                      )
+                    }}
+                  >
+                    Simulate Admin design approval (demo)
+                  </Button>
+                )}
+              </div>
+            )}
+            {drawerMessage && <div className="success-banner mt-3" role="status">{drawerMessage}</div>}
             <h3 className="mt-5 font-extrabold">Production stage history</h3>
             {selectedOrder.stageLog?.length ? (
               <div className="mt-2 space-y-2">
@@ -326,7 +362,8 @@ export function Orders() {
                       <span>{payment.method}</span><span>{money(payment.amount)}</span>
                     </div>
                     <p className="mt-1 text-xs text-stone-500">
-                      {new Date(payment.recordedAt).toLocaleString("en-PH")} · {staffFor(data, payment.recordedBy)?.name} · Receipt {payment.receiptIssued ? "Issued" : "Not Issued"}
+                      {new Date(payment.recordedAt).toLocaleString("en-PH")} · {staffFor(data, payment.recordedBy)?.name}
+                      {payment.referenceCode ? ` · Ref ${payment.referenceCode}` : ""} · Non-VAT Sales Invoice {payment.receiptIssued ? "Issued" : "Not Issued"}
                     </p>
                   </div>
                 ))}

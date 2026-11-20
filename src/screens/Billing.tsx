@@ -2,42 +2,35 @@ import { useEffect, useState } from "react"
 import { Button, Badge, Card, FieldLabel, Input } from "../components/ui"
 import { customerFor, money, orderItemSummary, orderTotal } from "../components/billingView"
 import {
-  calculatePricing,
   getPaymentStatus,
   getRemainingBalance,
   validatePaymentAmount,
 } from "../lib/billing"
-import { useBillingStore } from "../store/billingStore"
+import { billingStore, useBillingStore } from "../store/billingStore"
+
+const billingSnapshot = () => billingStore.getState()
 import type { PaymentMethod } from "../types"
 
 const METHODS: PaymentMethod[] = ["Cash", "GCash", "Bank Transfer"]
 
-export function Billing() {
+export function Billing({ initialOrderId }: { initialOrderId?: string } = {}) {
   const data = useBillingStore((state) => state)
   const recordPayment = useBillingStore((state) => state.recordPayment)
   const signedInStaffId = useBillingStore((state) => state.signedInStaffId)
-  const [selectedId, setSelectedId] = useState(data.orders[0]?.id ?? "")
+  const [selectedId, setSelectedId] = useState(initialOrderId ?? data.orders[0]?.id ?? "")
   const [method, setMethod] = useState<PaymentMethod | "">("")
   const [amount, setAmount] = useState("")
   const [receiptIssued, setReceiptIssued] = useState(false)
+  const [referenceCode, setReferenceCode] = useState("")
   const [confirmCash, setConfirmCash] = useState(false)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
   const order = data.orders.find((item) => item.id === selectedId)
-  const total = order ? orderTotal(data, order) : 0
+  const total = order ? orderTotal(order) : 0
   const remaining = order ? getRemainingBalance(order, total) : 0
   const customer = order ? customerFor(data, order.customerId) : undefined
-  const member = data.npcMembers.find(
-    (item) => item.npcNumber === customer?.npcNumber,
-  )
-  const breakdown = order
-    ? calculatePricing({
-        lines: order.lines,
-        tier: member?.tier,
-        rush: order.rush,
-        creditTermDays: order.creditTermDays,
-      })
-    : undefined
+  // The breakdown saved when the order was confirmed (a later tier change never alters it).
+  const breakdown = order?.pricing
 
   useEffect(() => {
     if (!order) return
@@ -45,6 +38,7 @@ export function Billing() {
     setAmount(suggested.toFixed(2))
     setMethod("")
     setReceiptIssued(false)
+    setReferenceCode("")
     setConfirmCash(false)
     setMessage("")
     setError("")
@@ -65,17 +59,32 @@ export function Billing() {
       return
     }
     try {
+      const tierBefore = data.npcMembers.find((item) => item.npcNumber === customer?.npcNumber)?.tier
       recordPayment(order.id, {
         method,
         amount: Number(amount),
         recordedBy: signedInStaffId,
+        referenceCode,
         receiptIssued,
       })
-      setMessage(
+      const after = billingSnapshot()
+      const updatedOrder = after.orders.find((item) => item.id === order.id)
+      const tierAfter = after.npcMembers.find((item) => item.npcNumber === customer?.npcNumber)?.tier
+      const notes = [
         method === "Cash"
           ? `Cash received and verified by ${data.staff.find((item) => item.id === signedInStaffId)?.name}.`
           : "Recorded as received. Not processed here.",
-      )
+        order.status === "Awaiting Release" && updatedOrder?.status === "In Production"
+          ? "Released for production. Materials deducted from inventory."
+          : order.status === "Awaiting Release" && updatedOrder?.status === "Awaiting Release"
+            ? "Downpayment recorded. Production starts once the design is approved in the Admin Portal."
+            : "",
+        tierBefore && tierAfter && tierBefore !== tierAfter
+          ? `NPC tier upgraded from ${tierBefore} to ${tierAfter}.`
+          : "",
+      ]
+      setMessage(notes.filter(Boolean).join(" "))
+      setReferenceCode("")
       setError("")
       setConfirmCash(false)
       setAmount("")
@@ -156,6 +165,19 @@ export function Billing() {
                 Recorded as received. Not processed here.
               </p>
             ) : null}
+            {method && (
+              <div className="mt-4">
+                <FieldLabel>
+                  Reference code {method === "Cash" ? "(optional)" : "*"}
+                </FieldLabel>
+                <Input
+                  value={referenceCode}
+                  maxLength={40}
+                  onChange={(event) => setReferenceCode(event.target.value)}
+                  placeholder={method === "Cash" ? "Optional for cash" : `${method} reference number`}
+                />
+              </div>
+            )}
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <div>
                 <FieldLabel>Payment Amount (₱)</FieldLabel>
@@ -178,7 +200,7 @@ export function Billing() {
             </div>
             <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-stone-100 p-3">
               <div>
-                <strong className="block text-sm">Official Receipt</strong>
+                <strong className="block text-sm">Non-VAT Sales Invoice</strong>
                 <span className="text-xs text-stone-500">Record issuance status</span>
               </div>
               <div className="segmented">
@@ -204,7 +226,7 @@ export function Billing() {
             {message && <div className="success-banner mt-4">{message}</div>}
             <Button
               className="mt-4 w-full"
-              disabled={!method || !amount || remaining <= 0}
+              disabled={!method || !amount || remaining <= 0 || (method !== "Cash" && !referenceCode.trim())}
               onClick={savePayment}
             >
               {confirmCash ? "Confirm Cash Received" : "Save Payment Record"}
@@ -214,6 +236,11 @@ export function Billing() {
             <div className="panel-title">Itemized breakdown</div>
             <div className="divide-y divide-stone-200 p-4 text-sm">
               <div className="flex justify-between py-1"><span>Subtotal</span><strong>{money(breakdown?.subtotal ?? 0)}</strong></div>
+              {breakdown?.tier && (
+                <div className="flex justify-between py-1 text-xs text-stone-500">
+                  <span>NPC tier at order time</span><strong>{breakdown.tier}</strong>
+                </div>
+              )}
               {breakdown?.discounts.map((discount) => (
                 <div key={discount.label} className="flex justify-between py-1">
                   <span>{discount.label}</span><strong>−{money(discount.amount)}</strong>
@@ -236,12 +263,13 @@ export function Billing() {
             {order.payments.length ? (
               <div className="overflow-x-auto">
                 <table>
-                  <thead><tr><th>Recorded at</th><th>Method</th><th>Amount</th><th>Staff</th><th>Official Receipt</th></tr></thead>
+                  <thead><tr><th>Recorded at</th><th>Method</th><th>Reference code</th><th>Amount</th><th>Staff</th><th>Non-VAT Sales Invoice</th></tr></thead>
                   <tbody>
                     {order.payments.map((item) => (
                       <tr key={item.id}>
                         <td>{new Date(item.recordedAt).toLocaleString("en-PH")}</td>
                         <td>{item.method}</td>
+                        <td>{item.referenceCode ?? "—"}</td>
                         <td>{money(item.amount)}</td>
                         <td>{data.staff.find((staff) => staff.id === item.recordedBy)?.name}</td>
                         <td>{item.receiptIssued ? "Issued" : "Not Issued"}</td>

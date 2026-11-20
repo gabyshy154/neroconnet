@@ -25,7 +25,14 @@ export interface BillingConfig {
   commissionPerPiece: number
 
   npcPointsPerPeso: number
+
+  // Points needed for each tier (REQ-4.8-06). Same sample thresholds as the Admin Portal.
+  tierPointThresholds: Record<Tier, number>
 }
+
+// NPC numbers issued at the counter use their own prefix so they never collide with
+// Customer Portal numbers (NPC-P) issued during an outage (REQ-4.8-03).
+export const NPC_PREFIX_BILLING = "NPC-B"
 
 export const BILLING_CONFIG: BillingConfig = {
   tierDiscountRates: {
@@ -59,4 +66,14 @@ export const BILLING_CONFIG: BillingConfig = {
   commissionPerPiece: 20,
 
   npcPointsPerPeso: 1000,
+
+  tierPointThresholds: {
+    Bronze: 0,
+
+    Silver: 20,
+
+    Gold: 50,
+
+    Platinum: 100,
+  },
 }

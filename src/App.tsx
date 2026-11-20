@@ -56,6 +56,7 @@ export default function App() {
   const signIn = useBillingStore((state) => state.signIn)
   const signOut = useBillingStore((state) => state.signOut)
   const [screen, setScreen] = useState<Screen>("walkin")
+  const [billingOrderId, setBillingOrderId] = useState<string>()
   const [scanRoute, setScanRoute] = useState(currentScanRoute)
   const signedInStaff = data.staff.find(
     (staff) => staff.id === data.signedInStaffId,
@@ -68,7 +69,7 @@ export default function App() {
   }, [])
 
   if (!signedInStaff) {
-    return <SignIn staff={data.staff} onSignIn={signIn} />
+    return <SignIn onSignIn={signIn} />
   }
 
   if (scanRoute) {
@@ -104,7 +105,10 @@ export default function App() {
               <button
                 key={item.id}
                 className={screen === item.id ? "active" : ""}
-                onClick={() => setScreen(item.id)}
+                onClick={() => {
+                  setScreen(item.id)
+                  setBillingOrderId(undefined)
+                }}
               >
                 <span>{item.number}</span>
                 {item.label}
@@ -143,7 +147,7 @@ export default function App() {
                 navigateToProductionScan(demoOrder.id, "Phone scan")
               }}
             >
-              Simulate scan
+              Update stage (demo)
             </button>
             <button
               type="button"
@@ -164,10 +168,17 @@ export default function App() {
           </div>
           {screen === "walkin" && <WalkIn />}
           {screen === "membership" && <Membership />}
-          {screen === "billing" && <Billing />}
+          {screen === "billing" && <Billing key={billingOrderId ?? "all"} initialOrderId={billingOrderId} />}
           {screen === "production" && <Production />}
           {screen === "commission" && <Commission />}
-          {screen === "claim" && <Claim />}
+          {screen === "claim" && (
+            <Claim
+              onOpenBilling={(orderId) => {
+                setBillingOrderId(orderId)
+                setScreen("billing")
+              }}
+            />
+          )}
           {screen === "orders" && <Orders />}
         </main>
       </div>

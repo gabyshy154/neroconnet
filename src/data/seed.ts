@@ -1,3 +1,4 @@
+import { lockPricing } from "../lib/billing"
 import type {
   CommissionEntry,
   Customer,
@@ -9,18 +10,19 @@ import type {
   Stage,
   StageLogEntry,
   Staff,
+  Tier,
 } from "../types"
 
 export const seedStaff: Staff[] = [
-  { id: "staff-001", name: "Rina Flores", isSalesPerson: true },
+  { id: "staff-001", name: "Rina Flores", email: "rina.flores@neroconnect.local", isSalesPerson: true },
 
-  { id: "staff-002", name: "Mark Bautista", isSalesPerson: true },
+  { id: "staff-002", name: "Mark Bautista", email: "mark.bautista@neroconnect.local", isSalesPerson: true },
 
-  { id: "staff-003", name: "Jenny Tan", isSalesPerson: true },
+  { id: "staff-003", name: "Jenny Tan", email: "jenny.tan@neroconnect.local", isSalesPerson: true },
 
-  { id: "staff-004", name: "Roel Santos", isSalesPerson: true },
+  { id: "staff-004", name: "Roel Santos", email: "roel.santos@neroconnect.local", isSalesPerson: true },
 
-  { id: "staff-005", name: "Liza Mendoza", isSalesPerson: false },
+  { id: "staff-005", name: "Liza Mendoza", email: "liza.mendoza@neroconnect.local", isSalesPerson: false },
 ]
 
 export const seedCustomers: Customer[] = [
@@ -31,7 +33,7 @@ export const seedCustomers: Customer[] = [
 
     phone: "0917 123 4567",
 
-    npcNumber: "NPC-000101",
+    npcNumber: "NPC-P-000101",
   },
 
   {
@@ -41,7 +43,7 @@ export const seedCustomers: Customer[] = [
 
     phone: "0928 456 1132",
 
-    npcNumber: "NPC-000102",
+    npcNumber: "NPC-B-000102",
   },
 
   {
@@ -51,7 +53,7 @@ export const seedCustomers: Customer[] = [
 
     phone: "0935 820 1440",
 
-    npcNumber: "NPC-000103",
+    npcNumber: "NPC-P-000103",
   },
 
   {
@@ -61,7 +63,7 @@ export const seedCustomers: Customer[] = [
 
     phone: "0909 652 8190",
 
-    npcNumber: "NPC-000104",
+    npcNumber: "NPC-B-000104",
   },
 
   { id: "customer-005", name: "Paolo Lim", phone: "0918 234 5678" },
@@ -75,7 +77,7 @@ export const seedCustomers: Customer[] = [
 
 export const seedNpcMembers: NpcMember[] = [
   {
-    npcNumber: "NPC-000101",
+    npcNumber: "NPC-P-000101",
 
     customerId: "customer-001",
 
@@ -87,7 +89,7 @@ export const seedNpcMembers: NpcMember[] = [
   },
 
   {
-    npcNumber: "NPC-000102",
+    npcNumber: "NPC-B-000102",
 
     customerId: "customer-002",
 
@@ -99,19 +101,19 @@ export const seedNpcMembers: NpcMember[] = [
   },
 
   {
-    npcNumber: "NPC-000103",
+    npcNumber: "NPC-P-000103",
 
     customerId: "customer-003",
 
     tier: "Gold",
 
-    points: 128,
+    points: 72,
 
     joinedAt: "2023-08-22T09:00:00.000Z",
   },
 
   {
-    npcNumber: "NPC-000104",
+    npcNumber: "NPC-B-000104",
 
     customerId: "customer-004",
 
@@ -267,7 +269,18 @@ const payment = (
   receiptIssued,
 })
 
-export const seedPayments: Payment[] = [
+const seedReferenceCodes: Record<string, string> = {
+  "payment-002": "BDO-20261106-4471",
+  "payment-003": "GC-1006 2251 908",
+  "payment-006": "BPI-20261106-1188",
+  "payment-008": "GC-1006 3302 117",
+  "payment-010": "BDO-20261029-0951",
+  "payment-011": "GC-1106 4410 252",
+  "payment-012": "GC-1106 5120 603",
+  "payment-013": "GC-1106 2087 431",
+}
+
+const rawSeedPayments: Payment[] = [
   payment(
     "payment-001",
 
@@ -443,7 +456,45 @@ export const seedPayments: Payment[] = [
 
     false,
   ),
+
+  payment(
+    "payment-012",
+
+    "NPS-20261106-012",
+
+    1500,
+
+    "GCash",
+
+    "staff-002",
+
+    "2026-11-06T10:15:00.000Z",
+
+    false,
+  ),
+
+  payment(
+    "payment-013",
+
+    "NPS-20261106-013",
+
+    1680,
+
+    "GCash",
+
+    "staff-003",
+
+    "2026-11-05T09:00:00.000Z",
+
+    true,
+  ),
 ]
+
+export const seedPayments: Payment[] = rawSeedPayments.map((item) =>
+  seedReferenceCodes[item.id]
+    ? { ...item, referenceCode: seedReferenceCodes[item.id] }
+    : item,
+)
 
 function createSeedStageLog(
   orderId: string,
@@ -462,7 +513,10 @@ function createSeedStageLog(
   }))
 }
 
-export const seedOrders: Order[] = [
+type RawSeedOrder = Omit<Order, "designStatus" | "claim" | "pricing"> &
+  Partial<Pick<Order, "designStatus" | "claim">>
+
+const rawSeedOrders: RawSeedOrder[] = [
   {
     id: "NPS-20261106-001",
 
@@ -476,7 +530,9 @@ export const seedOrders: Order[] = [
 
     rush: false,
 
-    status: "Pending Downpayment",
+    status: "Awaiting Release",
+
+    designStatus: "Under Review",
 
     payments: [],
 
@@ -624,6 +680,12 @@ export const seedOrders: Order[] = [
 
     status: "In Production",
 
+    claim: {
+      method: "Delivery",
+
+      deliveryAddress: "Subangdaku, Mandaue City, Cebu",
+    },
+
     payments: seedPayments.filter(
       (item) => item.orderId === "NPS-20261106-006",
     ),
@@ -654,7 +716,7 @@ export const seedOrders: Order[] = [
 
     stage: "Quality Control",
 
-    status: "Ready for Claim",
+    status: "Ready for Pickup",
 
     payments: seedPayments.filter(
       (item) => item.orderId === "NPS-20261106-007",
@@ -806,7 +868,96 @@ export const seedOrders: Order[] = [
 
     createdAt: "2026-11-06T10:00:00.000Z",
   },
+
+  {
+    id: "NPS-20261106-012",
+
+    customerId: "customer-002",
+
+    salesPersonId: "staff-002",
+
+    lines: [apparelLine("product-005", 350, { M: 6, L: 4 })],
+
+    deadline: "2026-11-16",
+
+    rush: false,
+
+    // Downpayment recorded, but the design still needs revision, so it is not released yet.
+    status: "Awaiting Release",
+
+    designStatus: "Revision Required",
+
+    payments: seedPayments.filter(
+      (item) => item.orderId === "NPS-20261106-012",
+    ),
+
+    stageLog: [],
+
+    createdAt: "2026-11-06T10:05:00.000Z",
+  },
+
+  {
+    // Finished and fully paid; waiting to be delivered (example of the Delivery claim method).
+    id: "NPS-20261106-013",
+
+    customerId: "customer-007",
+
+    salesPersonId: "staff-003",
+
+    lines: [apparelLine("product-003", 280, { M: 3, L: 3 })],
+
+    deadline: "2026-11-09",
+
+    rush: false,
+
+    stage: "Quality Control",
+
+    status: "Ready for Delivery",
+
+    claim: {
+      method: "Delivery",
+
+      deliveryAddress: "Unit 3B, Alang-Alang, Mandaue City, Cebu",
+    },
+
+    payments: seedPayments.filter(
+      (item) => item.orderId === "NPS-20261106-013",
+    ),
+
+    stageLog: createSeedStageLog(
+      "NPS-20261106-013",
+      ["Cutting", "Printing/Sewing", "Heat Press", "Quality Control"],
+      "staff-003",
+      "2026-11-05T10:00:00.000Z",
+    ),
+
+    createdAt: "2026-11-04T16:00:00.000Z",
+  },
 ]
+
+function tierOf(customerId: string): Tier | undefined {
+  const npcNumber = seedCustomers.find((item) => item.id === customerId)?.npcNumber
+  return seedNpcMembers.find((member) => member.npcNumber === npcNumber)?.tier
+}
+
+export const seedOrders: Order[] = rawSeedOrders.map((order) => ({
+  ...order,
+
+  // Every released order already passed Design Review.
+  designStatus: order.designStatus ?? "Approved",
+
+  claim: order.claim ?? { method: "Pick-up" },
+
+  pricing: lockPricing({
+    lines: order.lines,
+
+    tier: tierOf(order.customerId),
+
+    rush: order.rush,
+
+    creditTermDays: order.creditTermDays,
+  }),
+}))
 
 export const seedCommissions: CommissionEntry[] = [
   {

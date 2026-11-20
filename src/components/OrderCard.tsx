@@ -1,7 +1,7 @@
 import type { BillingData } from "../store/billingStore"
 import type { Order } from "../types"
 import { QRCodeSVG } from "qrcode.react"
-import { buildScanLink, isOrderOverdue } from "../lib/billing"
+import { buildScanLink, isOrderOverdue, isReadyForClaim } from "../lib/billing"
 import { navigateToProductionScan } from "../lib/production"
 import { Badge, Button } from "./ui"
 import { getToday } from "../config"
@@ -20,7 +20,7 @@ export function OrderCard({
   const currentStage =
     order.status === "In Production" ? order.stage ?? "Cutting" : order.stage
   const lifecycleComplete =
-    order.status === "Ready for Claim" || order.status === "Claimed"
+    isReadyForClaim(order.status) || order.status === "Claimed"
   const activeIndex = lifecycleComplete
     ? STAGES.length
     : currentStage
@@ -43,10 +43,10 @@ export function OrderCard({
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {overdue && <Badge tone="red">Overdue</Badge>}
-          {order.status === "Pending Downpayment" && (
-            <Badge tone="amber">Pending Downpayment</Badge>
+          {order.status === "Awaiting Release" && (
+            <Badge tone="amber">Awaiting Release</Badge>
           )}
-          {order.status === "Ready for Claim" && <Badge tone="green">Ready for Claim</Badge>}
+          {isReadyForClaim(order.status) && <Badge tone="green">{order.status}</Badge>}
           {order.status === "Claimed" && <Badge tone="green">Claimed</Badge>}
         </div>
       </div>
@@ -91,7 +91,7 @@ export function OrderCard({
           className="mt-2 w-full"
           onClick={() => navigateToProductionScan(order.id, "Phone scan")}
         >
-          Simulate scan
+          Update stage
         </Button>
       )}
       {currentStage && (

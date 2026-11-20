@@ -17,7 +17,12 @@ import {
   getTotalPieces,
   isOrderOverdue,
   isValidPhPhone,
+  lockPricing,
+  maskPhone,
   parseScanLink,
+  releaseIfReady,
+  tierForPoints,
+  upgradedTier,
   validateClaimRelease,
 } from "./billing"
 
@@ -53,6 +58,20 @@ const baseOrder = (overrides: Partial<Order> = {}): Order => ({
   rush: false,
 
   status: "In Production",
+
+  designStatus: "Approved",
+
+  claim: { method: "Pick-up" },
+
+  pricing: {
+    totalPieces: 10,
+    subtotal: 1000,
+    discounts: [],
+    totalDiscount: 0,
+    rushSurcharge: 0,
+    creditCharge: 0,
+    grandTotal: 1000,
+  },
 
   stageLog: [],
 
@@ -159,6 +178,8 @@ describe("pricing breakdown", () => {
 
       creditTermRates: { 15: 0.2, 30: 0.3 },
 
+      tierPointThresholds: { Bronze: 0, Silver: 20, Gold: 50, Platinum: 100 },
+
       commissionPerPiece: 20,
 
       npcPointsPerPeso: 1000,
@@ -222,7 +243,7 @@ describe("order lifecycle", () => {
       baseOrder({
         stage: undefined,
 
-        status: "Pending Downpayment",
+        status: "Awaiting Release",
 
         payments: [],
       }),
@@ -231,7 +252,20 @@ describe("order lifecycle", () => {
     expect(result).toEqual({ ok: false, reason: "downpayment-required" })
   })
 
-  it("advances by one stage and sets Ready for Claim after Quality Control", () => {
+  it("requires an approved design before release, even with a downpayment (BR-07)", () => {
+    const paidButUnderReview = baseOrder({
+      stage: undefined,
+      status: "Awaiting Release",
+      designStatus: "Under Review",
+    })
+
+    expect(advanceStage(paidButUnderReview)).toEqual({ ok: false, reason: "design-pending" })
+    expect(releaseIfReady(paidButUnderReview).status).toBe("Awaiting Release")
+    expect(releaseIfReady({ ...paidButUnderReview, payments: [] , designStatus: "Approved" }).status).toBe("Awaiting Release")
+    expect(releaseIfReady({ ...paidButUnderReview, designStatus: "Approved" }).status).toBe("In Production")
+  })
+
+  it("advances by one stage and sets Ready for Pickup after Quality Control", () => {
     const cutting = advanceStage(baseOrder({ stage: undefined }))
 
     expect(cutting).toMatchObject({ ok: true, order: { stage: "Cutting" } })
@@ -273,14 +307,20 @@ describe("order lifecycle", () => {
     expect(advanceStage(qualityControl.order)).toMatchObject({
       ok: true,
 
-      order: { stage: "Quality Control", status: "Ready for Claim" },
+      order: { stage: "Quality Control", status: "Ready for Pickup" },
     })
+
+    expect(
+      advanceStage(
+        baseOrder({ stage: "Quality Control", claim: { method: "Delivery", deliveryAddress: "Mandaue" } }),
+      ),
+    ).toMatchObject({ ok: true, order: { status: "Ready for Delivery" } })
   })
 
   it("does not advance an order after it is ready or claimed", () => {
     expect(
       advanceStage(
-        baseOrder({ status: "Ready for Claim", stage: "Quality Control" }),
+        baseOrder({ status: "Ready for Pickup", stage: "Quality Control" }),
       ),
     ).toEqual({ ok: false, reason: "already-ready" })
 
@@ -295,7 +335,7 @@ describe("claim release", () => {
     const readyOrder = baseOrder({
       stage: "Quality Control",
 
-      status: "Ready for Claim",
+      status: "Ready for Delivery",
 
       payments: [],
     })
@@ -334,9 +374,9 @@ describe("IDs, commissions, NPC points, overdue orders, and phone validation", (
       "NPS-20261106-012",
     )
 
-    expect(generateNpcNumber(1)).toBe("NPC-000001")
+    expect(generateNpcNumber(1)).toBe("NPC-B-000001")
 
-    expect(generateNpcNumber(999999)).toBe("NPC-999999")
+    expect(generateNpcNumber(999999)).toBe("NPC-B-999999")
 
     expect(() => generateOrderId("2026-11-06", 0)).toThrow(RangeError)
 
@@ -372,7 +412,7 @@ describe("IDs, commissions, NPC points, overdue orders, and phone validation", (
 
     expect(
       createCommissionEntry(
-        { ...claimedAndPaid, status: "Ready for Claim" },
+        { ...claimedAndPaid, status: "Ready for Pickup" },
 
         1000,
 
@@ -446,5 +486,31 @@ describe("IDs, commissions, NPC points, overdue orders, and phone validation", (
       parseScanLink("https://neroconnect.local/scan/NPS-20261106-002"),
     ).toBe("NPS-20261106-002")
     expect(parseScanLink("https://neroconnect.local/#/orders")).toBeUndefined()
+  })
+})
+
+describe("locked pricing and NPC tiers", () => {
+  it("keeps the tier and totals from order time", () => {
+    const locked = lockPricing({ lines: [line(10)], tier: "Silver" })
+
+    expect(locked).toMatchObject({ tier: "Silver", subtotal: 1000, grandTotal: 950 })
+  })
+
+  it("reaches tiers by points and never lowers a tier", () => {
+    expect(tierForPoints(0)).toBe("Bronze")
+    expect(tierForPoints(19)).toBe("Bronze")
+    expect(tierForPoints(20)).toBe("Silver")
+    expect(tierForPoints(50)).toBe("Gold")
+    expect(tierForPoints(100)).toBe("Platinum")
+    expect(upgradedTier("Bronze", 52)).toBe("Gold")
+    expect(upgradedTier("Gold", 5)).toBe("Gold")
+  })
+})
+
+describe("phone privacy", () => {
+  it("shows only the last four digits of a phone number", () => {
+    expect(maskPhone("0917 123 4567")).toBe("••• ••• 4567")
+    expect(maskPhone("+639171234568")).toBe("••• ••• 4568")
+    expect(maskPhone("12")).toBe("•••")
   })
 })

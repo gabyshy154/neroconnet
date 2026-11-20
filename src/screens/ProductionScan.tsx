@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Button, Card, FieldLabel, Input, Select } from "../components/ui"
 import { OrderCard } from "../components/OrderCard"
 import { STAGES } from "../components/billingView"
-import { parseScanLink } from "../lib/billing"
+import { isReadyForClaim, parseScanLink, readyStatusFor } from "../lib/billing"
 import {
   getCurrentProductionStage,
   getProductionBlockMessage,
@@ -44,8 +44,8 @@ export function ProductionScan({
   const blockMessage = blockReason
     ? getProductionBlockMessage(blockReason, currentStage)
     : ""
-  const nextStage = currentStage === "Quality Control"
-    ? "Ready for Claim"
+  const nextStage = currentStage === "Quality Control" && order
+    ? readyStatusFor(order)
     : currentStage
       ? STAGES[STAGES.indexOf(currentStage) + 1]
       : ""
@@ -75,10 +75,9 @@ export function ProductionScan({
       const updated = advanceOrderStage(order.id, station, staff.id, via)
       setSuccess({
         completedStage: currentStage,
-        nextStage:
-          updated.status === "Ready for Claim"
-            ? "Ready for Claim"
-            : updated.stage ?? "the next stage",
+        nextStage: isReadyForClaim(updated.status)
+          ? updated.status
+          : updated.stage ?? "the next stage",
       })
       setError("")
     } catch (reason) {

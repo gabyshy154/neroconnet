@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { Button, Badge, Card, FieldLabel, Input, Select, LockIcon } from "../components/ui"
 import { money, SIZES } from "../components/billingView"
 import { useBillingStore } from "../store/billingStore"
-import { calculatePricing } from "../lib/billing"
+import { calculatePricing, maskPhone } from "../lib/billing"
 import { getToday } from "../config"
 import type { OrderLine } from "../types"
 
@@ -34,6 +34,8 @@ export function WalkIn() {
     deadline: DEFAULT_DEADLINE,
     rush: false,
     creditTermDays: "" as "" | "15" | "30",
+    claimMethod: "Pick-up" as "Pick-up" | "Delivery",
+    deliveryAddress: "",
   })
   const [quantities, setQuantities] = useState<Record<string, number>>(EMPTY_QTY)
   const [success, setSuccess] = useState("")
@@ -91,6 +93,7 @@ export function WalkIn() {
       form.color.trim() &&
       form.salesPersonId &&
       form.deadline &&
+      (form.claimMethod === "Pick-up" || form.deliveryAddress.trim()) &&
       totalQty > 0,
   )
   const sizeLabels = useMemo(() => SIZES, [])
@@ -131,9 +134,11 @@ export function WalkIn() {
         deadline: form.deadline,
         rush: form.rush,
         creditTermDays: selectedCreditTerm,
+        claimMethod: form.claimMethod,
+        deliveryAddress: form.claimMethod === "Delivery" ? form.deliveryAddress : undefined,
       })
       setSavedOrderId(order.id)
-      setSuccess("Order created successfully. Record the downpayment in Billing.")
+      setSuccess("Order created. Record the downpayment in Billing; the design goes to the Admin Portal for review.")
       setError("")
       setQuantities(EMPTY_QTY)
     } catch (reason) {
@@ -162,7 +167,7 @@ export function WalkIn() {
               >
                 <span>
                   <strong className="block text-sm">{customer.name}</strong>
-                  <span className="text-xs text-stone-500">{customer.phone}</span>
+                  <span className="text-xs text-stone-500">{maskPhone(customer.phone)}</span>
                 </span>
                 {customer.npcNumber && <Badge tone="green">NPC</Badge>}
               </button>
@@ -206,7 +211,7 @@ export function WalkIn() {
           <Card className="border-[#74825c] bg-[#f1f4ec] p-4">
             <span className="eyebrow">Selected customer</span>
             <strong className="mt-1 block">{selected.name}</strong>
-            <span className="text-xs text-stone-600">{selected.phone}</span>
+            <span className="text-xs text-stone-600">{maskPhone(selected.phone)}</span>
           </Card>
         )}
       </div>
@@ -346,6 +351,33 @@ export function WalkIn() {
             </Select>
           </div>
         </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-[260px_1fr]">
+          <div>
+            <FieldLabel>Claim Method</FieldLabel>
+            <div className="grid grid-cols-2 gap-2">
+              {(["Pick-up", "Delivery"] as const).map((choice) => (
+                <button
+                  key={choice}
+                  type="button"
+                  onClick={() => setForm({ ...form, claimMethod: choice })}
+                  className={`choice-card ${form.claimMethod === choice ? "selected" : ""}`}
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+          </div>
+          {form.claimMethod === "Delivery" && (
+            <div>
+              <FieldLabel>Delivery Address *</FieldLabel>
+              <Input
+                value={form.deliveryAddress}
+                onChange={(event) => setForm({ ...form, deliveryAddress: event.target.value })}
+                placeholder="Complete delivery address"
+              />
+            </div>
+          )}
+        </div>
         <div className="my-4 border-t border-stone-200" />
         <FieldLabel>Size and Quantity</FieldLabel>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-9">
@@ -447,9 +479,11 @@ export function WalkIn() {
               Order ID: <strong>{savedOrderId}</strong>
             </p>
             <p className="mt-1">
-              Status: Pending Downpayment · Production: Not started
+              Status: Awaiting Release · Design: Under Review · Production: Not started
             </p>
-            <p className="mt-1">Materials deducted from inventory.</p>
+            <p className="mt-1">
+              Production starts once the design is approved and the downpayment is recorded. Materials are deducted from inventory at that point.
+            </p>
           </div>
         )}
         <div className="mt-4">

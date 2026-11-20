@@ -25,7 +25,7 @@ export function Commission() {
     if (
       !order ||
       order.status !== "Claimed" ||
-      getPaymentStatus(order, orderTotal(data, order)) !== "Paid in Full"
+      getPaymentStatus(order, orderTotal(order)) !== "Paid in Full"
     ) {
       return false
     }

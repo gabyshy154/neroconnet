@@ -6,7 +6,7 @@ import {
   getProductionBlockMessage,
   navigateToProductionScan,
 } from "../lib/production"
-import { parseScanLink } from "../lib/billing"
+import { getReleaseBlockers, parseScanLink, RELEASE_BLOCKER_MESSAGES } from "../lib/billing"
 import { useBillingStore } from "../store/billingStore"
 
 export function Production() {
@@ -25,7 +25,7 @@ export function Production() {
   }
 
   const waitingOrders = data.orders.filter(
-    (order) => order.status === "Pending Downpayment",
+    (order) => order.status === "Awaiting Release",
   )
 
   return (
@@ -65,15 +65,22 @@ export function Production() {
         {error && <div className="alert-banner mt-3" role="alert">{error}</div>}
       </Card>
       <Card className="overflow-hidden">
-        <div className="panel-title">Waiting for downpayment</div>
+        <div className="panel-title">Awaiting release (approved design + downpayment)</div>
         {waitingOrders.length ? (
           <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3">
             {waitingOrders.map((order) => (
-              <OrderCard key={order.id} order={order} data={data} />
+              <div key={order.id} className="space-y-2">
+                <OrderCard order={order} data={data} />
+                <ul className="space-y-1 text-xs font-semibold text-amber-800">
+                  {getReleaseBlockers(order).map((blocker) => (
+                    <li key={blocker}>• {RELEASE_BLOCKER_MESSAGES[blocker]}</li>
+                  ))}
+                </ul>
+              </div>
             ))}
           </div>
         ) : (
-          <div className="empty-state">No orders are waiting for downpayment.</div>
+          <div className="empty-state">No orders are awaiting release.</div>
         )}
       </Card>
       <div className="kanban">

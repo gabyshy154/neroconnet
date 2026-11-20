@@ -1,13 +1,12 @@
 import { useMemo, useState } from "react"
 import { Button, Badge, Card, FieldLabel, Input, Select } from "../components/ui"
 import { useBillingStore } from "../store/billingStore"
+import { maskPhone } from "../lib/billing"
+import { BILLING_CONFIG } from "../config"
+import type { Tier } from "../types"
 
-const TIER_REFERENCE = [
-  ["Bronze", "Free", "3%"],
-  ["Silver", "₱50", "5%"],
-  ["Gold", "₱80", "8%"],
-  ["Platinum", "₱100", "10%"],
-]
+const TIERS: Tier[] = ["Bronze", "Silver", "Gold", "Platinum"]
+const discountPercent = (tier: Tier) => Math.round(BILLING_CONFIG.tierDiscountRates[tier] * 100)
 
 export function Membership() {
   const customers = useBillingStore((state) => state.customers)
@@ -17,7 +16,6 @@ export function Membership() {
   const [query, setQuery] = useState("")
   const [selectedCustomerId, setSelectedCustomerId] = useState("")
   const [notFound, setNotFound] = useState(false)
-  const [optIn, setOptIn] = useState<"Yes" | "No">("No")
   const [success, setSuccess] = useState("")
   const [error, setError] = useState("")
   const [lookupSubmitted, setLookupSubmitted] = useState(false)
@@ -51,7 +49,7 @@ export function Membership() {
   }
 
   const enroll = () => {
-    if (!selectedCustomer || optIn !== "Yes") return
+    if (!selectedCustomer) return
     try {
       const enrolled = enrollNpcMember(selectedCustomer.id)
       setSuccess(`Enrollment complete. Member number: ${enrolled.npcNumber}`)
@@ -100,7 +98,7 @@ export function Membership() {
                 <div>
                   <h2 className="text-2xl font-black">{result.customer.name}</h2>
                   <p className="text-sm text-stone-500">
-                    {result.customer.phone} · {result.customer.npcNumber}
+                    {maskPhone(result.customer.phone)} · {result.customer.npcNumber}
                   </p>
                 </div>
                 <Badge tone={result.member ? "green" : "neutral"}>
@@ -115,9 +113,7 @@ export function Membership() {
                 <div className="metric">
                   <span>Discount</span>
                   <strong>
-                    {result.member
-                      ? `${({ Bronze: 3, Silver: 5, Gold: 8, Platinum: 10 })[result.member.tier]}%`
-                      : "0%"}
+                    {result.member ? `${discountPercent(result.member.tier)}%` : "0%"}
                   </strong>
                 </div>
                 <div className="metric">
@@ -126,7 +122,12 @@ export function Membership() {
                 </div>
               </div>
               <p className="mt-3 text-xs text-stone-500">
-                Points earn rate: 1 point per ₱1,000 paid.
+                Points earn rate: 1 point per full ₱1,000 paid on each order.
+                {result.member && result.member.tier !== "Platinum" && (() => {
+                  const next = TIERS[TIERS.indexOf(result.member.tier) + 1]
+                  const needed = BILLING_CONFIG.tierPointThresholds[next] - result.member.points
+                  return needed > 0 ? ` ${needed} more points to ${next}.` : ""
+                })()}
               </p>
             </div>
           ) : (
@@ -152,7 +153,7 @@ export function Membership() {
                 .filter((customer) => !customer.npcNumber)
                 .map((customer) => (
                   <option key={customer.id} value={customer.id}>
-                    {customer.name} · {customer.phone}
+                    {customer.name} · {maskPhone(customer.phone)}
                   </option>
                 ))}
             </Select>
@@ -162,34 +163,15 @@ export function Membership() {
               </p>
             )}
           </div>
-          <div className="mt-4">
-            <FieldLabel>Customer opts in?</FieldLabel>
-            <div className="segmented">
-              {(["Yes", "No"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  className={optIn === value ? "active" : ""}
-                  onClick={() => setOptIn(value)}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </div>
           <p className="my-3 text-xs text-stone-600">
-            Yes auto-enrolls this customer as Bronze — free, with 3% discount.
+            Ask the customer if they want to join the Nero Privilege Card. Enroll only if they agree:
+            they start as Bronze (free, 3% discount). If they decline, continue the order as a regular customer.
           </p>
-          {optIn === "No" && selectedCustomer && (
-            <p className="mb-3 text-sm text-stone-600" role="status">
-              Customer remains a regular customer and can continue without enrollment.
-            </p>
-          )}
           {error && <div className="alert-banner mb-3" role="alert">{error}</div>}
           {success && <div className="success-banner mb-3">{success}</div>}
           <Button
             className="w-full"
-            disabled={!selectedCustomer || Boolean(member) || optIn !== "Yes"}
+            disabled={!selectedCustomer || Boolean(member)}
             onClick={enroll}
           >
             Enroll as Bronze
@@ -198,13 +180,15 @@ export function Membership() {
       </div>
       <div>
         <p className="mb-2 text-xs font-semibold text-stone-500">
-          Tier reference only. Upgrade and points redemption rules are not defined.
+          Tiers upgrade automatically when points reach the threshold (sample thresholds, set in the Admin Portal). Points redemption is not offered.
         </p>
         <div className="tier-strip">
-        {TIER_REFERENCE.map(([tier, fee, discount]) => (
+        {TIERS.map((tier) => (
           <div key={tier}>
             <strong>{tier}</strong>
-            <span>{fee} · {discount} discount</span>
+            <span>
+              {tier === "Bronze" ? "On enrollment" : `${BILLING_CONFIG.tierPointThresholds[tier]} points`} · {discountPercent(tier)}% discount
+            </span>
           </div>
         ))}
         </div>

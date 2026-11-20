@@ -11,14 +11,18 @@ import { useStore } from "zustand"
 import {
   advanceStage,
   calculateNpcPoints,
-  calculatePricing,
   createCommissionEntry,
   generateNpcNumber,
   generateOrderId,
   getPaidTotal,
   getPaymentStatus,
   isValidPhPhone,
+  lockPricing,
+  releaseIfReady,
+  upgradedTier,
   validateClaimRelease,
+  isReadyForClaim,
+  readyStatusFor,
   validatePaymentAmount,
 } from "../lib/billing"
 import {
@@ -26,7 +30,7 @@ import {
   getProductionBlockMessage,
   getProductionBlockReason,
 } from "../lib/production"
-import { getToday, getTodayTimestamp } from "../config"
+import { getToday, getTodayTimestamp, NPC_PREFIX_BILLING } from "../config"
 
 import {
   seedCommissions,
@@ -39,6 +43,7 @@ import {
 } from "../data/seed"
 
 import type {
+  ClaimMethod,
   CommissionEntry,
   Customer,
   NpcMember,
@@ -94,6 +99,10 @@ export interface CreateOrderInput {
   rush?: boolean
 
   creditTermDays?: 15 | 30
+
+  claimMethod: ClaimMethod
+
+  deliveryAddress?: string
 }
 
 export interface RecordPaymentInput {
@@ -102,6 +111,8 @@ export interface RecordPaymentInput {
   amount: number
 
   recordedBy: string
+
+  referenceCode?: string
 
   receiptIssued: boolean
 
@@ -121,7 +132,8 @@ export interface ClaimOrderInput {
 export interface BillingStore extends BillingData {
   createOrder(input: CreateOrderInput): Order
   addCustomer(input: Omit<Customer, "id" | "npcNumber">): Customer
-  signIn(staffId: string, pin: string): void
+  /** Mock sign-in with the staff account's email (or full name) and password. */
+  signIn(identifier: string, password: string): void
   signOut(): void
   recordPayment(orderId: string, input: RecordPaymentInput): Payment
 
@@ -133,6 +145,12 @@ export interface BillingStore extends BillingData {
   ): Order
 
   claimOrder(input: ClaimOrderInput): Order
+
+  /** The customer switches Pick-up / Delivery before the order is claimed. */
+  changeClaimMethod(orderId: string, method: ClaimMethod, deliveryAddress?: string): Order
+
+  /** Demo stand-in for the Admin Portal's Design Review approving the order's design. */
+  simulateDesignApproval(orderId: string): Order
 
   enrollNpcMember(customerId: string, joinedAt?: string): NpcMember
 
@@ -188,7 +206,13 @@ function cloneSeedData(): BillingData {
 
       stageLog: order.stageLog.map((entry) => ({ ...entry })),
 
-      claim: order.claim ? { ...order.claim } : undefined,
+      claim: { ...order.claim },
+
+      pricing: {
+        ...order.pricing,
+
+        discounts: order.pricing.discounts.map((discount) => ({ ...discount })),
+      },
     })),
 
     payments: seedPayments.map((payment) => ({ ...payment })),
@@ -218,16 +242,9 @@ function getCustomerTier(
   )?.tier
 }
 
-function getOrderTotal(order: Order, data: BillingData): number {
-  return calculatePricing({
-    lines: order.lines,
-
-    tier: getCustomerTier(data, order.customerId),
-
-    rush: order.rush,
-
-    creditTermDays: order.creditTermDays,
-  }).grandTotal
+// Billing always uses the breakdown saved when the order was confirmed.
+function getOrderTotal(order: Order): number {
+  return order.pricing.grandTotal
 }
 
 function findOrder(data: BillingData, orderId: string): Order {
@@ -339,6 +356,10 @@ function createBillingStoreState(
           throw new Error("An order must contain at least one line.")
         }
 
+        if (input.claimMethod === "Delivery" && !input.deliveryAddress?.trim()) {
+          throw new Error("A delivery address is required for delivery orders.")
+        }
+
         const createdAt = getTodayTimestamp(now())
         const date = getToday()
 
@@ -366,7 +387,7 @@ function createBillingStoreState(
           throw new Error("Every order line must use a catalog product type.")
         }
 
-        calculatePricing({
+        const pricing = lockPricing({
           lines,
 
           tier: getCustomerTier(state, input.customerId),
@@ -391,7 +412,19 @@ function createBillingStoreState(
 
           creditTermDays: input.creditTermDays,
 
-          status: "Pending Downpayment",
+          // Walk-in designs go to the Admin Portal's Design Review like online ones (BR-07).
+          status: "Awaiting Release",
+
+          designStatus: "Under Review",
+
+          claim: {
+            method: input.claimMethod,
+
+            deliveryAddress:
+              input.claimMethod === "Delivery" ? input.deliveryAddress?.trim() : undefined,
+          },
+
+          pricing,
 
           payments: [],
 
@@ -460,15 +493,21 @@ function createBillingStoreState(
         })
         return customer
       },
-      signIn: (staffId, pin) => {
+      signIn: (identifier, password) => {
         const state = get()
-        if (!state.staff.some((item) => item.id === staffId)) {
-          throw new Error("Select a valid staff name.")
+        const key = identifier.trim().toLowerCase()
+        const staff = state.staff.find(
+          (item) => item.email.toLowerCase() === key || item.name.toLowerCase() === key,
+        )
+        if (!staff) {
+          throw new Error("No staff account matches that email or name.")
         }
-        if (!/^\d{4,6}$/.test(pin)) {
-          throw new Error("Enter a 4–6 digit demo PIN.")
+        // Mockup: any password that meets the Admin Portal's rule is accepted. The real
+        // system checks it against the staff account created in User Management.
+        if (password.length < 8) {
+          throw new Error("Password must be at least 8 characters.")
         }
-        set({ signedInStaffId: staffId })
+        set({ signedInStaffId: staff.id })
       },
       signOut: () => set({ signedInStaffId: null }),
 
@@ -477,12 +516,24 @@ function createBillingStoreState(
 
         const order = findOrder(state, orderId)
 
-        const total = getOrderTotal(order, state)
+        const total = getOrderTotal(order)
 
         validatePaymentAmount(order, total, input.amount)
 
         if (!state.staff.some((item) => item.id === input.recordedBy)) {
           throw new Error(`Staff member ${input.recordedBy} was not found.`)
+        }
+
+        const referenceCode = input.referenceCode?.trim() || undefined
+
+        if (input.method !== "Cash" && !referenceCode) {
+          throw new Error(
+            `Enter the ${input.method} reference code from the customer's receipt.`,
+          )
+        }
+
+        if (referenceCode && referenceCode.length > 40) {
+          throw new Error("Reference code must be 40 characters or fewer.")
         }
 
         const recordedAt = input.recordedAt ?? getTodayTimestamp(now())
@@ -500,19 +551,17 @@ function createBillingStoreState(
 
           recordedAt,
 
+          referenceCode,
+
           receiptIssued: input.receiptIssued,
         }
 
-        const nextOrder: Order = {
+        // The downpayment releases the order for production only if its design is approved.
+        const nextOrder: Order = releaseIfReady({
           ...order,
 
-          status:
-            order.status === "Pending Downpayment"
-              ? "In Production"
-              : order.status,
-
           payments: [...order.payments, payment],
-        }
+        })
 
         const previousPaymentStatus = getPaymentStatus(order, total)
 
@@ -535,11 +584,12 @@ function createBillingStoreState(
           if (memberIndex >= 0) {
             const earnedPoints = calculateNpcPoints(getPaidTotal(nextOrder))
 
-            npcMembers = npcMembers.map((member, index) =>
-              index === memberIndex
-                ? { ...member, points: member.points + earnedPoints }
-                : member,
-            )
+            // Points are credited per order; the tier upgrades when a threshold is reached.
+            npcMembers = npcMembers.map((member, index) => {
+              if (index !== memberIndex) return member
+              const points = member.points + earnedPoints
+              return { ...member, points, tier: upgradedTier(member.tier, points) }
+            })
           }
         }
 
@@ -612,7 +662,10 @@ function createBillingStoreState(
             "downpayment-required":
               "Record the downpayment before starting production.",
 
-            "already-ready": "This order is already ready for claim.",
+            "design-pending":
+              "The design must be approved in the Admin Portal (Design Review) before production starts.",
+
+            "already-ready": "This order has finished production.",
 
             "already-claimed": "This order has already been claimed.",
 
@@ -675,14 +728,14 @@ function createBillingStoreState(
           throw new Error("A delivery address is required.")
         }
 
-        const total = getOrderTotal(order, state)
+        const total = getOrderTotal(order)
 
         const release = validateClaimRelease(order, total)
 
         if (!release.allowed) {
           throw new Error(
             release.reason === "not-ready"
-              ? "Only orders ready for claim can be released."
+              ? "Only orders that are Ready for Pickup or Ready for Delivery can be released."
               : "Remaining balance must be settled before release.",
           )
         }
@@ -746,6 +799,99 @@ function createBillingStoreState(
         return claimedOrder
       },
 
+      changeClaimMethod: (orderId, method, deliveryAddress) => {
+        const state = get()
+
+        const order = findOrder(state, orderId)
+
+        if (order.status === "Claimed") {
+          throw new Error("This order has already been claimed.")
+        }
+
+        if (method === "Delivery" && !deliveryAddress?.trim()) {
+          throw new Error("A delivery address is required.")
+        }
+
+        const claim = {
+          method,
+
+          deliveryAddress: method === "Delivery" ? deliveryAddress?.trim() : undefined,
+        }
+
+        // A finished order moves between Ready for Pickup and Ready for Delivery.
+        const updated: Order = {
+          ...order,
+
+          claim,
+
+          status: isReadyForClaim(order.status) ? readyStatusFor({ claim }) : order.status,
+        }
+
+        const queuedActions =
+          !state.isOnline || state.isSyncing
+            ? [
+              ...state.queuedActions,
+
+              createQueuedAction(
+                state.queuedActions,
+
+                "changeClaimMethod",
+
+                { orderId, claim },
+
+                now().toISOString(),
+              ),
+              ]
+            : state.queuedActions
+
+        set({
+          orders: state.orders.map((item) => (item.id === orderId ? updated : item)),
+
+          queuedActions,
+        })
+
+        return updated
+      },
+
+      simulateDesignApproval: (orderId) => {
+        const state = get()
+
+        const order = findOrder(state, orderId)
+
+        if (order.designStatus === "Approved") {
+          throw new Error("This design is already approved.")
+        }
+
+        const approvedOrder = releaseIfReady({ ...order, designStatus: "Approved" })
+
+        const queuedActions =
+          !state.isOnline || state.isSyncing
+            ? [
+              ...state.queuedActions,
+
+              createQueuedAction(
+                state.queuedActions,
+
+                "designApproved",
+
+                { orderId },
+
+                now().toISOString(),
+              ),
+              ]
+            : state.queuedActions
+
+        set({
+          orders: state.orders.map((item) =>
+            item.id === orderId ? approvedOrder : item,
+          ),
+
+          queuedActions,
+        })
+
+        return approvedOrder
+      },
+
       enrollNpcMember: (customerId, joinedAt = getTodayTimestamp(now())) => {
         const state = get()
 
@@ -759,7 +905,7 @@ function createBillingStoreState(
 
         const nextSequence =
           state.npcMembers.reduce((highest, member) => {
-            const match = /^NPC-(\d{6})$/.exec(member.npcNumber)
+            const match = new RegExp(`^${NPC_PREFIX_BILLING}-(\\d{6})$`).exec(member.npcNumber)
 
             return match ? Math.max(highest, Number(match[1])) : highest
           }, 0) + 1
@@ -875,7 +1021,12 @@ function createBillingStoreState(
 
       storage: createJSONStorage(() => storage),
 
-      version: 1,
+      // Versions 2-3 changed the order shape and demo orders (release gate, claim method,
+      // locked pricing, delivery example),
+      // so older saved demo data is replaced with the new seed.
+      version: 3,
+
+      migrate: () => cloneSeedData() as BillingStore,
     },
   )
 }

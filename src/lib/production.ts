@@ -1,3 +1,4 @@
+import { getReleaseBlockers, isReadyForClaim, RELEASE_BLOCKER_MESSAGES } from "./billing"
 import type { Order, Stage } from "../types"
 
 export const PRODUCTION_STATION_STORAGE_KEY = "neroconnect-production-station"
@@ -5,6 +6,7 @@ export const PRODUCTION_STATION_STORAGE_KEY = "neroconnect-production-station"
 export type ProductionBlockReason =
   | "already-claimed"
   | "already-ready"
+  | "design-pending"
   | "downpayment-required"
   | "not-in-production"
   | "unknown-order"
@@ -21,8 +23,8 @@ export function getProductionBlockReason(
 ): ProductionBlockReason | undefined {
   if (!order) return "unknown-order"
   if (order.status === "Claimed") return "already-claimed"
-  if (order.status === "Ready for Claim") return "already-ready"
-  if (order.status === "Pending Downpayment") return "downpayment-required"
+  if (isReadyForClaim(order.status)) return "already-ready"
+  if (order.status === "Awaiting Release") return getReleaseBlockers(order)[0] ?? "not-in-production"
   if (order.status !== "In Production") return "not-in-production"
   if (getCurrentProductionStage(order) !== station) return "wrong-station"
   return undefined
@@ -36,8 +38,9 @@ export function getProductionBlockMessage(
     case "already-claimed":
     case "already-ready":
       return "This order has finished production."
+    case "design-pending":
     case "downpayment-required":
-      return "Record the downpayment before starting production."
+      return RELEASE_BLOCKER_MESSAGES[reason]
     case "not-in-production":
       return "This order is not in production and cannot be advanced."
     case "unknown-order":

@@ -1,20 +1,19 @@
 import { useState } from "react"
-import type { Staff } from "../types"
-import { Button, Card, FieldLabel, Input, Select } from "../components/ui"
+import { Button, Card, FieldLabel, Input } from "../components/ui"
 
 export function SignIn({
-  staff,
   onSignIn,
 }: {
-  staff: Staff[]
-  onSignIn: (staffId: string, pin: string) => void
+  onSignIn: (identifier: string, password: string) => void
 }) {
-  const [staffId, setStaffId] = useState("")
-  const [pin, setPin] = useState("")
+  const [identifier, setIdentifier] = useState("")
+  const [password, setPassword] = useState("")
   const [error, setError] = useState("")
+  const canSubmit = Boolean(identifier.trim() && password)
   const submit = () => {
+    if (!canSubmit) return
     try {
-      onSignIn(staffId, pin)
+      onSignIn(identifier, password)
       setError("")
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to sign in.")
@@ -28,38 +27,47 @@ export function SignIn({
         <p className="eyebrow mt-4 text-center">Nero Printing Services</p>
         <h1 className="mt-1 text-center text-2xl font-black">NeroConnect</h1>
         <p className="mb-5 mt-2 text-center text-sm text-stone-500">
-          Staff sign-in · Demo PIN: any 4–6 digits
+          Staff sign-in with your User Management account
         </p>
-        <div className="space-y-4">
+        <form
+          className="space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            submit()
+          }}
+        >
           <div>
-            <FieldLabel>Staff name</FieldLabel>
-            <Select value={staffId} onChange={(event) => setStaffId(event.target.value)}>
-              <option value="">Select your name</option>
-              {staff.map((person) => (
-                <option key={person.id} value={person.id}>
-                  {person.name}
-                </option>
-              ))}
-            </Select>
+            <FieldLabel>Email or full name</FieldLabel>
+            <Input
+              type="text"
+              autoComplete="username"
+              autoCapitalize="none"
+              value={identifier}
+              onChange={(event) => {
+                setIdentifier(event.target.value)
+                setError("")
+              }}
+              placeholder="e.g. rina.flores@neroconnect.local"
+            />
           </div>
           <div>
-            <FieldLabel>PIN</FieldLabel>
+            <FieldLabel>Password</FieldLabel>
             <Input
               type="password"
-              inputMode="numeric"
               autoComplete="current-password"
-              maxLength={6}
-              value={pin}
-              onChange={(event) => setPin(event.target.value.replace(/\D/g, ""))}
-              onKeyDown={(event) => event.key === "Enter" && submit()}
-              placeholder="Enter 4–6 digit demo PIN"
+              value={password}
+              onChange={(event) => {
+                setPassword(event.target.value)
+                setError("")
+              }}
+              placeholder="At least 8 characters"
             />
           </div>
           {error && <div className="alert-banner" role="alert">{error}</div>}
-          <Button className="w-full" disabled={!staffId || pin.length < 4} onClick={submit}>
+          <Button type="submit" className="w-full" disabled={!canSubmit}>
             Sign in
           </Button>
-        </div>
+        </form>
       </Card>
     </div>
   )
