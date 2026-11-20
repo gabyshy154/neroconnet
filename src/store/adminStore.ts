@@ -79,7 +79,6 @@ export interface AdminStore extends AdminStoreData {
   recordStockMovement: (input: StockMovementInput, at?: string) => void
   approveDesign: (submissionId: string) => void
   requestDesignRevision: (submissionId: string, note: string) => void
-  setDesignSource: (submissionId: string, source: DesignSubmission['source']) => void
   markCommissionPaid: (payoutId: string, at?: string) => void
   correctMemberTier: (npcNumber: string, tier: Tier, at?: string) => void
   adjustMemberPoints: (npcNumber: string, points: number, reason: string, at?: string) => void
@@ -297,22 +296,6 @@ export function createAdminStore(storage?: StateStorage) {
           item.id === submissionId
             ? { ...item, status: 'Revision Required', note: note.trim() }
             : item,
-        ),
-      })
-    },
-
-    setDesignSource: (submissionId, source) => {
-      const state = get()
-      const submission = requireById(state.designSubmissions, submissionId, 'Design submission')
-      if (submission.status === 'Approved') {
-        throw new Error('The source of an approved design cannot be changed.')
-      }
-      if (source !== 'Client Design' && source !== 'Nero Design') {
-        throw new Error('Design source must be Client Design or Nero Design.')
-      }
-      set({
-        designSubmissions: state.designSubmissions.map(item =>
-          item.id === submissionId ? { ...item, source } : item,
         ),
       })
     },

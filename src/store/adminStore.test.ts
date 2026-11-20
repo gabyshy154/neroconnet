@@ -205,12 +205,6 @@ describe('admin store', () => {
       .toBe('Approved')
   })
 
-  it('lets the admin tag the design source until the design is approved', () => {
-    store.getState().setDesignSource('DS-001', 'Nero Design')
-    expect(store.getState().designSubmissions.find(item => item.id === 'DS-001')?.source).toBe('Nero Design')
-    expect(() => store.getState().setDesignSource('DS-004', 'Client Design')).toThrow(/approved design/)
-  })
-
   it('marks a commission paid with a timestamp and does not allow reversal', () => {
     store.getState().markCommissionPaid('COM-008', '2026-11-06T12:00:00.000Z')
     expect(store.getState().commissionPayouts.find(item => item.id === 'COM-008')).toMatchObject({

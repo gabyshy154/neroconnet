@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { pricingPlaceholders } from '../config'
 import { seedData } from '../data/seed'
 import {
+  addProduct,
   buildPricingSuggestions,
   defaultEffectiveAt,
   describePricingChanges,
@@ -11,6 +12,7 @@ import {
   sellingPrice,
   validateEffectiveAt,
 } from './pricing'
+import { validatePricingRules } from './admin'
 
 describe('Formula 2 selling price', () => {
   it('computes (material + labor + overhead) × (1 + markup)', () => {
@@ -106,5 +108,28 @@ describe('pricing suggestions from sales figures', () => {
       '2026-11-06',
     )
     expect(suggestions).toEqual([])
+  })
+})
+
+describe('adding a product', () => {
+  const rules = pricingPlaceholders
+
+  it('adds a product with empty costs that must be filled before scheduling', () => {
+    const next = addProduct(rules, '  Hoodie  ')
+    expect(Object.keys(next.productCosts)).toContain('Hoodie')
+    expect(rules.productCosts).not.toHaveProperty('Hoodie')
+    expect(validatePricingRules(next).some(error => error.includes('"Hoodie"'))).toBe(true)
+    const zero = { ...next, productCosts: { ...next.productCosts, Hoodie: { materialCost: 0, laborCost: 0, overheadCost: 0, markupPercent: 0 } } }
+    expect(validatePricingRules(zero)).toContain('Enter at least one cost for "Hoodie"; a ₱0.00 selling price is not allowed.')
+    const filled = { ...next, productCosts: { ...next.productCosts, Hoodie: { materialCost: 300, laborCost: 80, overheadCost: 20, markupPercent: 25 } } }
+    expect(validatePricingRules(filled)).toEqual([])
+    expect(describePricingChanges(rules, filled)).toContain('Hoodie: added at ₱500.00')
+  })
+
+  it('rejects blank, too long, and duplicate names', () => {
+    const existing = Object.keys(rules.productCosts)[0]
+    expect(() => addProduct(rules, '   ')).toThrow('Enter a product name.')
+    expect(() => addProduct(rules, 'x'.repeat(41))).toThrow('40 characters or fewer')
+    expect(() => addProduct(rules, existing.toUpperCase())).toThrow('already in the price list')
   })
 })

@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react'
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
+import { EmptyState, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
 import { DEMO_TODAY } from '../config'
-import { exportToCsv, formatCurrency, isLowStock, orderStatus } from '../lib/admin'
+import { formatCurrency, isLowStock, orderStatus } from '../lib/admin'
 import { dailySeries, demandByProduct, filterByDateRange, getPeriodRange, type DateRange, type ReportingPeriod } from '../lib/reporting'
 import { useAdminStore } from '../store/adminStore'
 
@@ -48,7 +48,7 @@ export default function ReportsScreen() {
   const [reportType, setReportType] = useState<ReportType>('Sales')
   const [mode, setMode] = useState<PeriodMode>('Daily')
   const [custom, setCustom] = useState<DateRange>(() => getPeriodRange('Monthly', DEMO_TODAY))
-  const [message, setMessage] = useState({ success: 'Report data loaded from the local store.', error: '' })
+  const message = { success: 'Report data loaded from the local store.', error: '' }
 
   const range: DateRange = mode === 'Custom' ? custom : getPeriodRange(mode, DEMO_TODAY)
 
@@ -192,28 +192,6 @@ export default function ReportsScreen() {
     }
   }, [reportType, range.from, range.to, orders, materials, movements, members, tierCorrections, pointsAdjustments, payouts, employees])
 
-  const downloadCsv = () => {
-    if ('error' in result) return
-    try {
-      const sections = result.report.tables.map(table => {
-        const rows = table.rows.map(row => Object.fromEntries(table.columns.map((column, index) => [column, row[index]])))
-        return `${table.title}\r\n${exportToCsv(rows, table.columns)}`
-      })
-      const csv = [`${reportType} report,${range.from} to ${range.to}`, ...sections].join('\r\n\r\n')
-      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `neroconnect-${reportType.toLowerCase()}-${range.from}-to-${range.to}.csv`
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-      setMessage({ success: `Downloaded the ${reportType.toLowerCase()} report as a CSV file.`, error: '' })
-    } catch (reason) {
-      setMessage({ success: '', error: reason instanceof Error ? reason.message : 'The CSV report could not be downloaded.' })
-    }
-  }
-
   const dateField: React.CSSProperties = { display: 'block', marginTop: 4, padding: '6px 8px', border: `1px solid ${screenColors.border}`, borderRadius: 5, fontSize: 12 }
 
   return (
@@ -242,7 +220,6 @@ export default function ReportsScreen() {
           </>
         )}
         <span style={{ color: screenColors.muted, fontSize: 12, padding: '0 6px 8px' }}>{range.from} to {range.to}</span>
-        <ScreenButton allowReadOnly onClick={downloadCsv} disabled={'error' in result}>Download CSV</ScreenButton>
       </div>
       {'error' in result ? null : (
         <>

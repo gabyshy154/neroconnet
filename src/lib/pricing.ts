@@ -24,6 +24,35 @@ export function sellingPrice(cost: ProductCost, markupPercent = cost.markupPerce
   return roundToCentavo((cost.materialCost + cost.laborCost + cost.overheadCost) * (1 + markupPercent / 100))
 }
 
+export const maxProductNameLength = 40
+
+/** Checks a new product's name; returns the cleaned name, or throws with the reason. */
+export function validateNewProductName(name: string, existing: readonly string[]): string {
+  const cleaned = name.trim().replace(/\s+/g, ' ')
+  if (!cleaned) {
+    throw new RangeError('Enter a product name.')
+  }
+  if (cleaned.length > maxProductNameLength) {
+    throw new RangeError(`Product name must be ${maxProductNameLength} characters or fewer.`)
+  }
+  if (existing.some(item => item.toLowerCase() === cleaned.toLowerCase())) {
+    throw new RangeError(`"${cleaned}" is already in the price list.`)
+  }
+  return cleaned
+}
+
+/** A new product starts with empty costs that the Admin fills in before scheduling. */
+export function addProduct(rules: PricingRules, name: string): PricingRules {
+  const product = validateNewProductName(name, Object.keys(rules.productCosts))
+  return {
+    ...rules,
+    productCosts: {
+      ...rules.productCosts,
+      [product]: { materialCost: Number.NaN, laborCost: Number.NaN, overheadCost: Number.NaN, markupPercent: Number.NaN },
+    },
+  }
+}
+
 /**
  * Earliest moment a price change may take effect. The lead time is longer than the
  * five-minute API Bridge sync, so the Billing System and Customer Portal both hold the

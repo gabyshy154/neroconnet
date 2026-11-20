@@ -8,7 +8,6 @@ import {
   createCommissionPayout,
   deductInventory,
   estimateMaterialYield,
-  exportToCsv,
   formatCurrency,
   generateRecommendations,
   isLowStock,
@@ -278,13 +277,7 @@ describe('pricing rule validation', () => {
   })
 })
 
-describe('CSV and currency formatting', () => {
-  it('exports escaped CSV rows with headers', () => {
-    expect(exportToCsv([{ name: 'Doe, Jane', note: 'said "hello"' }])).toBe(
-      'name,note\r\n"Doe, Jane","said ""hello"""',
-    )
-  })
-
+describe('currency formatting', () => {
   it('formats currency with a peso sign, grouping, and exactly two decimals', () => {
     expect(formatCurrency(1250)).toBe('₱1,250.00')
     expect(formatCurrency(12.5)).toBe('₱12.50')

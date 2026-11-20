@@ -113,7 +113,6 @@ export interface DesignSubmission {
   id: string
   orderRef: string
   customer: string
-  source: 'Client Design' | 'Nero Design'
   front: string
   back?: string
   /** REQ-4.3-04. Drafts stay in the Customer Portal: a design is saved only once submitted (REQ-4.3-07). */

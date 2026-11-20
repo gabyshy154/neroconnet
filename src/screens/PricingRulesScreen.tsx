@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { PricingRules, ProductCost, Tier } from '../types'
 import { formatCurrency } from '../lib/admin'
-import { defaultEffectiveAt, describePricingChanges, productPriceList, screenPrintCharge, sellingPrice } from '../lib/pricing'
+import { addProduct, defaultEffectiveAt, describePricingChanges, maxProductNameLength, productPriceList, screenPrintCharge, sellingPrice } from '../lib/pricing'
 import { useAdminStore } from '../store/adminStore'
 import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
 
@@ -81,6 +81,30 @@ export default function PricingRulesScreen() {
       },
     }))
   }
+  const [newProduct, setNewProduct] = useState('')
+  const addNewProduct = () => {
+    setSuccess('')
+    setError('')
+    try {
+      const next = addProduct(draft, newProduct)
+      const added = Object.keys(next.productCosts).find(name => !(name in draft.productCosts))!
+      setDraft(next)
+      setNewProduct('')
+      setSuccess(`${added} added to the draft. Enter its costs and markup, then schedule the change.`)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'The product could not be added.')
+    }
+  }
+  // Only products not yet in effect can be removed; existing ones are referenced by past orders.
+  const removeNewProduct = (product: string) => {
+    setDraft(current => {
+      const productCosts = { ...current.productCosts }
+      delete productCosts[product]
+      return { ...current, productCosts }
+    })
+    setSuccess(`${product} removed from the draft.`)
+    setError('')
+  }
   const priceFor = (cost: ProductCost): string => {
     try {
       return formatCurrency(sellingPrice(cost))
@@ -146,7 +170,7 @@ export default function PricingRulesScreen() {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
                 <thead>
                   <tr style={{ textAlign: 'left' }}>
-                    {['Product', 'Material', 'Labor', 'Overhead', 'Markup %', 'Current price', 'New price'].map(column => (
+                    {['Product', 'Material', 'Labor', 'Overhead', 'Markup %', 'Current price', 'New price', ''].map(column => (
                       <th key={column} scope="col" style={{ color: screenColors.muted, fontSize: 12, textAlign: 'left', padding: '0 6px 6px 0', fontWeight: 600 }}>{column}</th>
                     ))}
                   </tr>
@@ -169,11 +193,39 @@ export default function PricingRulesScreen() {
                         </td>
                       ))}
                       <td style={{ color: screenColors.muted, fontSize: 13, whiteSpace: 'nowrap', paddingRight: 10 }}>{currentPrices[product] === undefined ? '—' : formatCurrency(currentPrices[product])}</td>
-                      <td style={{ color: screenColors.foreground, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>{priceFor(cost)}</td>
+                      <td style={{ color: screenColors.foreground, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', paddingRight: 10 }}>{priceFor(cost)}</td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {currentPrices[product] === undefined && (
+                          <ScreenButton variant="secondary" onClick={() => removeNewProduct(product)}>Remove</ScreenButton>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <form
+                onSubmit={event => {
+                  event.preventDefault()
+                  addNewProduct()
+                }}
+                style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', marginTop: 14 }}
+              >
+                <label style={{ ...labelStyle, marginBottom: 0 }}>
+                  New product name
+                  <input
+                    type="text"
+                    maxLength={maxProductNameLength}
+                    placeholder="e.g. Hoodie"
+                    value={newProduct}
+                    onChange={event => setNewProduct(event.target.value)}
+                    style={{ ...fieldStyle, marginTop: 5, width: 240 }}
+                  />
+                </label>
+                <ScreenButton type="submit">Add product</ScreenButton>
+              </form>
+              <p style={{ color: screenColors.muted, fontSize: 12, marginTop: 8 }}>
+                A new product is added to the draft only. It reaches the Billing System and Customer Portal when the scheduled change takes effect.
+              </p>
             </ScreenCard>
             <ScreenCard style={{ marginBottom: 18 }}>
               <h2 style={{ color: screenColors.foreground, fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Screen-print charges (₱)</h2>

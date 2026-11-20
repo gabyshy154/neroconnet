@@ -219,12 +219,12 @@ export const seedData: AdminSeedData = {
   // Every order in a production stage has an approved design (BR-03). The other statuses
   // belong to orders still awaiting release.
   designSubmissions: [
-    { id: 'DS-001', orderRef: 'NPS-20261106-001', customer: 'Kevin Ong', source: 'Client Design', front: 'designs/DS-001-front.png', back: 'designs/DS-001-back.png', status: 'Under Review' },
-    { id: 'DS-002', orderRef: 'NPS-20261106-005', customer: 'Grace Tan', source: 'Client Design', front: 'designs/DS-002-front.png', back: 'designs/DS-002-back.png', status: 'Under Review' },
-    { id: 'DS-003', orderRef: 'NPS-20261105-001', customer: 'Miguel Garcia', source: 'Client Design', front: 'designs/DS-003-front.png', status: 'Revision Required', note: 'Please enlarge the front emblem.' },
-    { id: 'DS-004', orderRef: 'NPS-20261106-003', customer: 'Arnel Dizon', source: 'Nero Design', front: 'designs/DS-004-front.png', back: 'designs/DS-004-back.png', status: 'Approved', note: 'Approved by customer.' },
-    { id: 'DS-005', orderRef: 'NPS-20261102-001', customer: 'Ana Cruz', source: 'Client Design', front: 'designs/DS-005-front.png', status: 'Approved' },
-    { id: 'DS-006', orderRef: 'NPS-20261106-004', customer: 'Sofia Villanueva', source: 'Nero Design', front: 'designs/DS-006-front.png', back: 'designs/DS-006-back.png', status: 'Approved' },
+    { id: 'DS-001', orderRef: 'NPS-20261106-001', customer: 'Kevin Ong', front: 'designs/DS-001-front.png', back: 'designs/DS-001-back.png', status: 'Under Review' },
+    { id: 'DS-002', orderRef: 'NPS-20261106-005', customer: 'Grace Tan', front: 'designs/DS-002-front.png', back: 'designs/DS-002-back.png', status: 'Under Review' },
+    { id: 'DS-003', orderRef: 'NPS-20261105-001', customer: 'Miguel Garcia', front: 'designs/DS-003-front.png', status: 'Revision Required', note: 'Please enlarge the front emblem.' },
+    { id: 'DS-004', orderRef: 'NPS-20261106-003', customer: 'Arnel Dizon', front: 'designs/DS-004-front.png', back: 'designs/DS-004-back.png', status: 'Approved', note: 'Approved by customer.' },
+    { id: 'DS-005', orderRef: 'NPS-20261102-001', customer: 'Ana Cruz', front: 'designs/DS-005-front.png', status: 'Approved' },
+    { id: 'DS-006', orderRef: 'NPS-20261106-004', customer: 'Sofia Villanueva', front: 'designs/DS-006-front.png', back: 'designs/DS-006-back.png', status: 'Approved' },
   ],
   // NPC-P = enrolled through the Customer Portal; NPC-B = enrolled at the Billing System counter.
   // Each tier matches the points thresholds in config (Silver 20, Gold 50, Platinum 100).

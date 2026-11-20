@@ -380,6 +380,9 @@ export function validatePricingRules(rules: PricingRules): string[] {
     if (!Number.isFinite(cost.markupPercent) || cost.markupPercent < 0) {
       errors.push(`Markup for "${product}" must be greater than or equal to zero.`)
     }
+    if (amounts.every(amount => Number.isFinite(amount)) && amounts.every(amount => amount === 0)) {
+      errors.push(`Enter at least one cost for "${product}"; a ₱0.00 selling price is not allowed.`)
+    }
   }
   const screenPrint = [rules.screenPrint.setupFeePerColor, rules.screenPrint.perColorPerPiece, rules.screenPrint.perSquareInchPerPiece]
   if (screenPrint.some(amount => !Number.isFinite(amount) || amount < 0)) {
@@ -420,24 +423,6 @@ export function validatePricingRules(rules: PricingRules): string[] {
 
 function isValidPercent(value: number): boolean {
   return Number.isFinite(value) && value >= 0 && value <= 100
-}
-
-export function exportToCsv(
-  rows: readonly Record<string, string | number | boolean | null | undefined>[],
-  headers?: readonly string[],
-): string {
-  const columns = headers ?? (rows.length > 0 ? Object.keys(rows[0]) : [])
-  if (columns.length === 0) {
-    return ''
-  }
-  const escapeCell = (value: string | number | boolean | null | undefined): string => {
-    const text = value == null ? '' : String(value)
-    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-  }
-  return [
-    columns.map(escapeCell).join(','),
-    ...rows.map(row => columns.map(column => escapeCell(row[column])).join(',')),
-  ].join('\r\n')
 }
 
 export function formatCurrency(amount: number): string {

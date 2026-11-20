@@ -1,13 +1,11 @@
-import { useContext, useState } from 'react'
-import { EmptyState, ReadOnlyContext, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
+import { useState } from 'react'
+import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
 import { useAdminStore } from '../store/adminStore'
 
 export default function DesignReviewScreen() {
   const submissions = useAdminStore(state => state.designSubmissions)
   const approveDesign = useAdminStore(state => state.approveDesign)
   const requestDesignRevision = useAdminStore(state => state.requestDesignRevision)
-  const setDesignSource = useAdminStore(state => state.setDesignSource)
-  const readOnly = useContext(ReadOnlyContext)
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [failedPreviews, setFailedPreviews] = useState<Record<string, boolean>>({})
   const [success, setSuccess] = useState('Design Review data loaded from the local store.')
@@ -52,21 +50,6 @@ export default function DesignReviewScreen() {
                   <div>
                     <h2 style={{ color: screenColors.foreground, fontSize: 15, fontWeight: 600 }}>{submission.customer}</h2>
                     <p style={{ color: screenColors.muted, fontSize: 12, marginTop: 4 }}>{submission.orderRef}</p>
-                    <label style={{ color: screenColors.muted, display: 'block', fontSize: 11, marginTop: 6 }}>
-                      Design source
-                      <select
-                        value={submission.source}
-                        disabled={readOnly || submission.status === 'Approved'}
-                        onChange={event => {
-                          const source = event.target.value === 'Nero Design' ? 'Nero Design' : 'Client Design'
-                          runAction(() => setDesignSource(submission.id, source), `Design source for ${submission.orderRef} set to ${source}.`)
-                        }}
-                        style={{ display: 'block', marginTop: 3, padding: '4px 6px', border: `1px solid ${screenColors.border}`, borderRadius: 5, fontSize: 12, color: screenColors.foreground, background: readOnly || submission.status === 'Approved' ? '#F4F3EE' : '#fff' }}
-                      >
-                        <option>Client Design</option>
-                        <option>Nero Design</option>
-                      </select>
-                    </label>
                   </div>
                   <span style={{ color: submission.status === 'Approved' ? '#276749' : submission.status === 'Revision Required' ? '#9B3526' : screenColors.accent, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap' }}>
                     {submission.status}
