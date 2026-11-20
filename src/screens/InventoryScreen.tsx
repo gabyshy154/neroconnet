@@ -1,25 +1,70 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { sampleMaterialConsumption } from '../config'
 import { estimateMaterialYield, isLowStock } from '../lib/admin'
 import { useAdminStore } from '../store/adminStore'
-import { EmptyState, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
+import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
+
+const emptyMovement = { materialId: '', type: 'In' as 'In' | 'Out', qty: '', reference: '', reason: '' }
 
 export default function InventoryScreen() {
   const materials = useAdminStore(state => state.materials)
   const movements = useAdminStore(state => state.inventoryMovements)
+  const recordStockMovement = useAdminStore(state => state.recordStockMovement)
+  const [form, setForm] = useState(emptyMovement)
+  const [message, setMessage] = useState({ success: '', error: '' })
   const lowStock = materials.filter(isLowStock)
   const sizeColumns = useMemo(() => [...new Set(materials.flatMap(material => Object.keys(material.sizeStock ?? {})))].sort(), [materials])
   const dataError = materials.some(material =>
     !Number.isFinite(material.stock) || material.stock < 0 ||
     !Number.isFinite(material.reorderPoint) || material.reorderPoint < 0,
   ) || movements.some(movement => !Number.isFinite(movement.qty) || movement.qty <= 0)
+  const materialName = (id: string) => materials.find(material => material.id === id)?.name ?? id
+
+  const runAction = (action: () => void, success: string) => {
+    try {
+      action()
+      setMessage({ success, error: '' })
+      return true
+    } catch (reason) {
+      setMessage({ success: '', error: reason instanceof Error ? reason.message : 'The inventory action could not be completed.' })
+      return false
+    }
+  }
+
+  const submitMovement = () => {
+    if (!form.materialId) {
+      setMessage({ success: '', error: 'Select a material.' })
+      return
+    }
+    const qty = Number(form.qty)
+    const saved = runAction(
+      () => recordStockMovement({ materialId: form.materialId, type: form.type, qty, reason: form.reason, reference: form.reference }),
+      `Stock ${form.type === 'In' ? 'in' : 'out'} of ${qty} recorded for ${materialName(form.materialId)}.`,
+    )
+    if (saved) {
+      setForm(emptyMovement)
+    }
+  }
+
+  const fieldStyle: React.CSSProperties = {
+    display: 'block',
+    width: '100%',
+    marginTop: 5,
+    padding: '7px 9px',
+    border: `1px solid ${screenColors.border}`,
+    borderRadius: 5,
+    background: '#fff',
+    color: screenColors.foreground,
+    font: '13px Inter, sans-serif',
+  }
+  const labelStyle: React.CSSProperties = { color: screenColors.muted, fontSize: 12 }
 
   return (
     <div>
       <ScreenTitle title="Inventory" subtitle="Stock by size, yield estimates, and QR / number-based movement history" />
       <ScreenFeedback
-        error={dataError ? 'Inventory data contains an invalid stock level or movement quantity.' : ''}
-        success={dataError ? '' : 'Inventory data loaded from the local store.'}
+        error={dataError ? 'Inventory data contains an invalid stock level or movement quantity.' : message.error}
+        success={dataError || message.error ? '' : message.success || 'Inventory data loaded from the local store.'}
       />
       {lowStock.map(material => (
         <div key={material.id} role="status" style={{
@@ -35,9 +80,46 @@ export default function InventoryScreen() {
           fontSize: 13,
         }}>
           <strong>Low stock: {material.name}</strong>
-          <span>{material.stock} {material.unit} remaining · reorder point {material.reorderPoint}</span>
+          <span>
+            {material.stock} {material.unit} remaining · reorder point {material.reorderPoint}
+          </span>
         </div>
       ))}
+      <ScreenCard style={{ marginBottom: 18 }}>
+        <h2 style={{ color: screenColors.foreground, fontSize: 15, fontWeight: 600, marginBottom: 4 }}>Record stock in / out</h2>
+        <p style={{ color: screenColors.muted, fontSize: 12, marginBottom: 12 }}>
+          Use when a supplier delivery arrives, and for damaged or spoiled materials and count corrections. Order deductions happen automatically when an order is released for production.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1.4fr) minmax(90px, 0.6fr) minmax(90px, 0.6fr) minmax(140px, 1fr) minmax(180px, 1.4fr) auto', gap: 10, alignItems: 'end' }}>
+          <label style={labelStyle}>
+            Material
+            <select value={form.materialId} onChange={event => setForm(current => ({ ...current, materialId: event.target.value }))} style={fieldStyle}>
+              <option value="">Select a material</option>
+              {materials.map(material => <option key={material.id} value={material.id}>{material.name} ({material.unit})</option>)}
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Type
+            <select value={form.type} onChange={event => setForm(current => ({ ...current, type: event.target.value === 'Out' ? 'Out' : 'In' }))} style={fieldStyle}>
+              <option value="In">In</option>
+              <option value="Out">Out</option>
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Quantity
+            <input type="number" min="1" value={form.qty} onChange={event => setForm(current => ({ ...current, qty: event.target.value }))} style={fieldStyle} />
+          </label>
+          <label style={labelStyle}>
+            QR Code / Number
+            <input value={form.reference} placeholder="e.g. DR-1120" onChange={event => setForm(current => ({ ...current, reference: event.target.value }))} style={fieldStyle} />
+          </label>
+          <label style={labelStyle}>
+            Reason
+            <input value={form.reason} placeholder={form.type === 'In' ? 'Supplier delivery received' : 'Damaged during heat press'} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))} style={fieldStyle} />
+          </label>
+          <ScreenButton onClick={submitMovement}>Record movement</ScreenButton>
+        </div>
+      </ScreenCard>
       <ScreenCard style={{ marginBottom: 18, overflowX: 'auto' }}>
         <h2 style={{ color: screenColors.foreground, fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Size-by-quantity stock matrix</h2>
         {materials.length === 0
@@ -110,7 +192,7 @@ export default function InventoryScreen() {
                       {materials.find(material => material.id === movement.materialId)?.name ?? movement.materialId}
                     </td>
                     <td style={{ padding: 10, color: screenColors.foreground, fontSize: 13 }}>{movement.qty}</td>
-                    <td style={{ padding: 10, color: screenColors.muted, fontFamily: 'DM Mono, monospace', fontSize: 12 }}>{movement.orderId ?? '—'}</td>
+                    <td style={{ padding: 10, color: screenColors.muted, fontFamily: 'DM Mono, monospace', fontSize: 12 }}>{movement.orderId ?? movement.reference ?? '—'}</td>
                     <td style={{ padding: 10, color: screenColors.muted, fontSize: 12 }}>{movement.reason}</td>
                   </tr>
                 ))}

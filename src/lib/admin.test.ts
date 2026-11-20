@@ -1,22 +1,27 @@
 import { describe, expect, it } from 'vitest'
 import { commissionPerPiece, pointsPer1000Paid, pricingPlaceholders } from '../config'
-import type { AdminOrder, Employee, Material } from '../types'
+import type { AdminOrder, Material } from '../types'
 import {
   addInventory,
   calculateCostAndProfit,
   calculateMembershipPoints,
   createCommissionPayout,
-  createEmployee,
   deductInventory,
   estimateMaterialYield,
   exportToCsv,
   formatCurrency,
   generateRecommendations,
-  includePendingPurchases,
   isLowStock,
-  validateEmployeeInput,
+  nextTierProgress,
+  orderStatus,
+  pointsEarnedFromPayment,
+  removeInventory,
+  suggestReorderQuantity,
+  tierForPoints,
+  upgradeTierForPoints,
   validatePricingRules,
 } from './admin'
+import { productPriceList } from './pricing'
 
 const materials: Material[] = [
   { id: 'paper', name: 'Paper', unit: 'sheets', stock: 5, reorderPoint: 5, unitCost: 10 },
@@ -25,7 +30,9 @@ const materials: Material[] = [
 
 const order: AdminOrder = {
   id: 'ORD-1',
+  customerId: 'CUS-1',
   customer: 'Sample Customer',
+  product: 'Custom T-Shirt',
   pieces: 12,
   salesPersonId: 'EMP-1',
   createdAt: '2026-11-06T12:00:00.000Z',
@@ -59,7 +66,7 @@ describe('inventory', () => {
         materialId: 'paper',
         type: 'Out',
         qty: 2,
-        reason: 'Order confirmed',
+        reason: 'Released for production',
         orderId: 'ORD-1',
         at: '2026-11-06T00:00:00.000Z',
       },
@@ -68,7 +75,7 @@ describe('inventory', () => {
         materialId: 'ink',
         type: 'Out',
         qty: 3,
-        reason: 'Order confirmed',
+        reason: 'Released for production',
         orderId: 'ORD-1',
         at: '2026-11-06T00:00:00.000Z',
       },
@@ -92,6 +99,14 @@ describe('inventory', () => {
       reason: 'Received stock',
     })
   })
+
+  it('records a manual stock-out with its QR Code / Number and refuses to go below zero', () => {
+    const result = removeInventory(materials, [], 'ink', 3, 'Damaged bottle', 'now', 'MOV-2', 'QR-7781')
+    expect(result.materials[1].stock).toBe(17)
+    expect(result.movements[0]).toMatchObject({ type: 'Out', qty: 3, reason: 'Damaged bottle', reference: 'QR-7781' })
+    expect(() => removeInventory(materials, [], 'paper', 6, 'Count correction', 'now', 'MOV-3')).toThrow(/Insufficient stock/)
+    expect(() => removeInventory(materials, [], 'paper', 1, '  ', 'now', 'MOV-4')).toThrow(/Reason/)
+  })
 })
 
 describe('material yield', () => {
@@ -105,55 +120,60 @@ describe('material yield', () => {
 })
 
 describe('recommendations', () => {
-  it('generates only reorder recommendations when any material is low', () => {
-    const recommendations = generateRecommendations(
-      materials,
-      { paper: 25 },
-      [{ product: 'Mug', currentPrice: 250, suggestedPrice: 275, basis: 'Cost change' }],
-    )
-    expect(recommendations).toHaveLength(1)
+  const mugSuggestion = {
+    product: 'Mug',
+    currentMarkupPercent: 40,
+    suggestedMarkupPercent: 45,
+    currentPrice: 250,
+    suggestedPrice: 275,
+    basis: 'High demand',
+  }
+  const base = { movements: [], targetStock: { paper: 25 }, pricingSuggestions: [mugSuggestion] }
+
+  it('generates reorder suggestions for low stock and pricing suggestions in every case (Figure 8)', () => {
+    const recommendations = generateRecommendations({ ...base, materials })
+    expect(recommendations.map(item => item.kind)).toEqual(['Reorder', 'Pricing'])
     expect(recommendations[0]).toMatchObject({
       kind: 'Reorder',
       subject: 'Paper',
       suggestion: 'Reorder 20 sheets.',
       status: 'Pending',
+      reorderQty: 20,
     })
-  })
-
-  it('generates pricing recommendations when stock is not low', () => {
-    const recommendations = generateRecommendations(
-      [materials[1]],
-      {},
-      [{ product: 'Mug', currentPrice: 250, suggestedPrice: 275, basis: 'Cost change' }],
-    )
-    expect(recommendations).toHaveLength(1)
-    expect(recommendations[0]).toMatchObject({
+    expect(recommendations[1]).toMatchObject({
       kind: 'Pricing',
       subject: 'Mug',
-      status: 'Pending',
+      pricingUpdate: { product: 'Mug', markupPercent: 45 },
     })
-    expect(recommendations[0].suggestion).toContain('₱250.00')
-    expect(recommendations[0].suggestion).toContain('₱275.00')
+    expect(recommendations[1].suggestion).toContain('₱250.00')
+    expect(recommendations[1].suggestion).toContain('₱275.00')
   })
 
-  it('counts approved pending reorder quantities toward stock for the next recommendation generation', () => {
-    const pendingPurchase = {
-      id: 'MOV-REC-001-1',
-      materialId: 'paper',
-      type: 'In' as const,
-      qty: 20,
-      reason: 'Pending purchase (mock) — Paper',
-      at: '2026-11-06T00:00:00.000Z',
-    }
-    expect(includePendingPurchases(materials, [pendingPurchase])[0].stock).toBe(25)
-    const recommendations = generateRecommendations(
-      materials,
-      { paper: 25 },
-      [{ product: 'Mug', currentPrice: 250, suggestedPrice: 275, basis: 'Cost change' }],
-      'next-generation',
-      [pendingPurchase],
-    )
-    expect(recommendations.map(item => item.kind)).toEqual(['Pricing'])
+  it('still generates pricing suggestions when no stock is low', () => {
+    expect(generateRecommendations({ ...base, materials: [materials[1]] }).map(item => item.kind)).toEqual(['Pricing'])
+  })
+
+  it('sizes a reorder from typical usage, falling back to target stock without usage history', () => {
+    const usage = [
+      { id: 'M1', materialId: 'paper', type: 'Out' as const, qty: 10, reason: 'Production use', at: '2026-10-20T08:00:00.000Z' },
+      { id: 'M2', materialId: 'paper', type: 'Out' as const, qty: 4, reason: 'Production use', at: '2026-11-05T08:00:00.000Z' },
+      { id: 'M3', materialId: 'paper', type: 'Out' as const, qty: 99, reason: 'Too old', at: '2026-09-01T08:00:00.000Z' },
+    ]
+    const suggestion = suggestReorderQuantity(materials[0], usage, { paper: 25 }, '2026-11-06')
+    // 14 sheets over 28 days = 3.5 per week; 2 weeks of cover (7) + reorder point 5 − stock 5.
+    expect(suggestion.qty).toBe(7)
+    expect(suggestion.basis).toContain('3.5 sheets per week')
+    expect(suggestReorderQuantity(materials[0], [], { paper: 25 }, '2026-11-06').qty).toBe(20)
+  })
+})
+
+describe('order lifecycle', () => {
+  it('reports Ready for Pickup / Ready for Delivery after Quality Control', () => {
+    expect(orderStatus({ claimed: false })).toBe('Awaiting Release')
+    expect(orderStatus({ claimed: false, stage: 'Cutting' })).toBe('In Production')
+    expect(orderStatus({ claimed: false, stage: 'Quality Control', readyAt: 'now', claimMethod: 'Pick-up' })).toBe('Ready for Pickup')
+    expect(orderStatus({ claimed: false, stage: 'Quality Control', readyAt: 'now', claimMethod: 'Delivery' })).toBe('Ready for Delivery')
+    expect(orderStatus({ claimed: true, stage: 'Quality Control', readyAt: 'now' })).toBe('Claimed')
   })
 })
 
@@ -176,13 +196,11 @@ describe('commission and profitability', () => {
     expect(createCommissionPayout({ ...order, amountPaid: order.salePrice - 1 })).toBeNull()
   })
 
-  it('calculates production, gross, and net profit', () => {
-    expect(calculateCostAndProfit(order, 240, 100)).toEqual({
+  it('calculates production cost and gross profit', () => {
+    expect(calculateCostAndProfit(order)).toEqual({
       productionCost: 1800,
       grossProfit: 3200,
-      netProfit: 2860,
     })
-    expect(calculateCostAndProfit(order, 240).netProfit).toBe(2910)
   })
 })
 
@@ -192,11 +210,30 @@ describe('membership points', () => {
     expect(calculateMembershipPoints(1999)).toBe(1)
     expect(calculateMembershipPoints(2000)).toBe(2)
   })
+
+  it('picks the tier from points and upgrades but never downgrades automatically', () => {
+    expect(tierForPoints(0)).toBe('Bronze')
+    expect(tierForPoints(19)).toBe('Bronze')
+    expect(tierForPoints(20)).toBe('Silver')
+    expect(tierForPoints(50)).toBe('Gold')
+    expect(tierForPoints(100)).toBe('Platinum')
+    const member = { npcNumber: 'NPC-P-1', name: 'M', tier: 'Silver' as const, points: 42, openingPoints: 0, joinedAt: '2026-01-01' }
+    expect(nextTierProgress(member)).toEqual({ tier: 'Gold', pointsNeeded: 8 })
+    expect(nextTierProgress({ ...member, tier: 'Platinum' })).toBeNull()
+    expect(upgradeTierForPoints({ ...member, points: 55 })).toBe('Gold')
+    expect(upgradeTierForPoints({ ...member, points: 5 })).toBeNull()
+  })
+
+  it('awards only the whole points newly crossed by a payment', () => {
+    expect(pointsEarnedFromPayment(1050, 2100)).toBe(1)
+    expect(pointsEarnedFromPayment(0, 999)).toBe(0)
+    expect(pointsEarnedFromPayment(900, 3100)).toBe(3)
+  })
 })
 
 describe('pricing rule validation', () => {
   it('accepts exact sample pricing values', () => {
-    expect(pricingPlaceholders.productPrices).toEqual({
+    expect(productPriceList(pricingPlaceholders)).toEqual({
       'Sublimation Jersey': 420,
       'Sublimation Polo': 520,
       'Training Shorts': 280,
@@ -222,44 +259,22 @@ describe('pricing rule validation', () => {
   it('rejects negative values and percentages above 100', () => {
     const invalidRules = {
       ...pricingPlaceholders,
-      productPrices: { Product: -1 },
+      productCosts: { Product: { materialCost: -1, laborCost: 0, overheadCost: 0, markupPercent: 10 } },
       membershipDiscount: { ...pricingPlaceholders.membershipDiscount, Gold: 101 },
       rushPercent: 101,
     }
     expect(validatePricingRules(invalidRules)).toHaveLength(3)
   })
-})
 
-describe('employee creation', () => {
-  const input = {
-    name: '  Alex Example ',
-    role: 'Production Staff' as const,
-    team: 'Team A',
-    schedule: ['Monday', 'Wednesday'],
-  }
-  const existing: Employee[] = []
-
-  it('validates required fields, unique names, and valid schedules', () => {
-    expect(validateEmployeeInput(input, existing)).toEqual([])
-    expect(validateEmployeeInput({ ...input, name: ' Alex Example ' }, [{
-      id: 'EMP-1',
-      name: 'Alex Example',
-      role: 'Manager',
-      team: 'Team B',
-      schedule: ['Friday'],
-      status: 'Active',
-    }])).toContain('Employee name must be unique.')
-    expect(validateEmployeeInput({ ...input, schedule: ['Funday'] }, existing)).toContain(
-      'Schedule must contain unique, valid days of the week.',
-    )
-  })
-
-  it('creates valid employees in Pending status', () => {
-    expect(createEmployee('EMP-2', input, existing)).toMatchObject({
-      id: 'EMP-2',
-      name: 'Alex Example',
-      status: 'Pending',
-    })
+  it('validates screen-print charges, storage fees, and late-payment penalties', () => {
+    expect(pricingPlaceholders.storageFee).toEqual({ graceDays: 7, percentPerWeek: 5 })
+    expect(pricingPlaceholders.latePaymentPenalty).toEqual({ percentPer30Days: 2.5 })
+    expect(validatePricingRules({
+      ...pricingPlaceholders,
+      screenPrint: { ...pricingPlaceholders.screenPrint, perColorPerPiece: -1 },
+      storageFee: { graceDays: 1.5, percentPerWeek: 120 },
+      latePaymentPenalty: { percentPer30Days: -2 },
+    })).toHaveLength(4)
   })
 })
 

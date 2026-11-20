@@ -20,7 +20,7 @@ export default function DashboardScreen() {
   const members = useAdminStore(state => state.members)
   const movements = useAdminStore(state => state.inventoryMovements)
   const lowStock = materials.filter(isLowStock)
-  const activeOrders = orders.filter(order => order.stage && !order.claimed)
+  const activeOrders = orders.filter(order => order.stage && !order.claimed && !order.readyAt)
   const trend = useMemo(() => getDailyOrderSales(orders), [orders])
   const todaySales = trend.find(item => item.date === DEMO_TODAY)?.sales ?? 0
   const dataError = orders.some(order =>

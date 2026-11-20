@@ -10,6 +10,7 @@ const categoryLabels = {
   'pending-employee': 'Employee',
   assignment: 'Assignment',
   deadline: 'Deadline',
+  'pricing-alert': 'Pricing',
 } as const
 
 export default function NotificationsScreen() {
@@ -20,6 +21,7 @@ export default function NotificationsScreen() {
   const orders = useAdminStore(state => state.orders)
   const employees = useAdminStore(state => state.employees)
   const assignmentEvents = useAdminStore(state => state.assignmentEvents)
+  const recommendations = useAdminStore(state => state.recommendations)
   const readNotificationIds = useAdminStore(state => state.readNotificationIds)
   const markNotificationRead = useAdminStore(state => state.markNotificationRead)
   const markAllNotificationsRead = useAdminStore(state => state.markAllNotificationsRead)
@@ -33,7 +35,8 @@ export default function NotificationsScreen() {
     orders,
     employees,
     assignmentEvents,
-  }), [viewAs, materials, inventoryMovements, designSubmissions, orders, employees, assignmentEvents])
+    recommendations,
+  }), [viewAs, materials, inventoryMovements, designSubmissions, orders, employees, assignmentEvents, recommendations])
   const unreadNotifications = notifications.filter(item => !readNotificationIds.includes(item.id))
 
   const markRead = (id: string) => {

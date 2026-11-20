@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { EmptyState, ScreenButton, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
 import { formatCurrency } from '../lib/admin'
 import { filterByPostedAtPeriod, type ReportingPeriod } from '../lib/reporting'
+import { isSalesPerson } from '../lib/userAccess'
 import { useAdminStore } from '../store/adminStore'
 import { DEMO_TODAY } from '../config'
 
@@ -14,8 +15,14 @@ export default function CommissionScreen() {
   const [period, setPeriod] = useState<ReportingPeriod>('Daily')
   const [success, setSuccess] = useState('Commission data loaded from the local store.')
   const [error, setError] = useState('')
-  const periodPayouts = useMemo(() => filterByPostedAtPeriod(payouts, period, DEMO_TODAY), [payouts, period])
-  const salesPeople = employees.filter(employee => employee.role === 'Sales Person')
+  const viewAs = useAdminStore(state => state.viewAs)
+  // An employee sees only their own commission; the Admin sees everyone's.
+  const ownId = viewAs === 'Admin' ? null : viewAs.slice('employee:'.length)
+  const periodPayouts = useMemo(
+    () => filterByPostedAtPeriod(payouts, period, DEMO_TODAY).filter(payout => !ownId || payout.salesPersonId === ownId),
+    [payouts, period, ownId],
+  )
+  const salesPeople = employees.filter(employee => isSalesPerson(employee) && (!ownId || employee.id === ownId))
   const summaries = salesPeople.map(person => {
     const personPayouts = periodPayouts.filter(payout => payout.salesPersonId === person.id)
     const earned = personPayouts.reduce((sum, payout) => sum + payout.amount, 0)
@@ -41,7 +48,7 @@ export default function CommissionScreen() {
 
   return (
     <div>
-      <ScreenTitle title="Commission" subtitle="Commission is earned at ₱20.00 per piece for claimed, fully paid orders." />
+      <ScreenTitle title={ownId ? 'My Commission' : 'Commission'} subtitle="Commission is earned at ₱20.00 per piece for claimed, fully paid orders, by staff tagged Sales." />
       <ScreenFeedback success={success} error={error} />
       <div role="group" aria-label="Commission period" style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {(['Daily', 'Weekly'] as const).map(item => (

@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   BarChart2,
   Bell,
+  CalendarDays,
   ChevronDown,
   ChevronRight,
   Crown,
@@ -16,9 +17,11 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react'
+import { ReadOnlyContext } from './components/ScreenUI'
 import { generateNotifications } from './lib/notifications'
+import { accessFor, displayTitle } from './lib/userAccess'
 import { useAdminStore } from './store/adminStore'
-import type { ViewAs } from './types'
+import type { AccessLevel, ModuleId, ViewAs } from './types'
 import CommissionScreen from './screens/CommissionScreen'
 import CostProfitScreen from './screens/CostProfitScreen'
 import DashboardScreen from './screens/DashboardScreen'
@@ -57,32 +60,30 @@ type ScreenId =
   | 'design'
   | 'pricing'
 
-const navigation = [
-  { id: 'overview', label: 'Dashboard', Icon: LayoutDashboard },
-  { id: 'inventory', label: 'Inventory', Icon: Package },
-  { id: 'recommendations', label: 'Recommendations', Icon: Sparkles },
-  { id: 'reports', label: 'Reports & Analytics', Icon: BarChart2 },
-  { id: 'employees', label: 'Employees', Icon: Users },
-  { id: 'cost', label: 'Cost & Profit', Icon: DollarSign },
-  { id: 'commission', label: 'Commission', Icon: Receipt },
-  { id: 'membership', label: 'Membership', Icon: Crown },
-  { id: 'design', label: 'Design Review', Icon: Palette },
-  { id: 'pricing', label: 'Pricing Rules', Icon: SlidersHorizontal },
-  { id: 'notifications', label: 'Notifications', Icon: Bell },
-] as const satisfies readonly {
+interface NavigationItem {
   id: ScreenId
   label: string
   Icon: typeof LayoutDashboard
-}[]
+  /** The module whose permission decides who sees this screen (REQ-4.13-08). None = always shown. */
+  module?: ModuleId
+}
 
-const employeeNavigation = [
-  { id: 'schedule', label: 'My Schedule', Icon: LayoutDashboard },
-  { id: 'notifications', label: 'Notifications', Icon: Bell },
-] as const satisfies readonly {
-  id: ScreenId
-  label: string
-  Icon: typeof LayoutDashboard
-}[]
+// Admin screens, each tied to a module. An employee sees a screen when their access to its module
+// is View only or View and edit; View only makes the screen read-only.
+const adminNavigation: readonly NavigationItem[] = [
+  { id: 'overview', label: 'Dashboard', Icon: LayoutDashboard, module: 'reports-analytics' },
+  { id: 'inventory', label: 'Inventory', Icon: Package, module: 'inventory' },
+  { id: 'recommendations', label: 'Recommendations', Icon: Sparkles, module: 'business-recommendations' },
+  { id: 'reports', label: 'Reports & Analytics', Icon: BarChart2, module: 'reports-analytics' },
+  { id: 'employees', label: 'User Management', Icon: Users, module: 'user-management' },
+  { id: 'cost', label: 'Cost & Profit', Icon: DollarSign, module: 'reports-analytics' },
+  { id: 'commission', label: 'Commission', Icon: Receipt, module: 'sales-commission' },
+  { id: 'membership', label: 'Membership', Icon: Crown, module: 'npc-membership' },
+  { id: 'design', label: 'Design Review', Icon: Palette, module: 'design-review' },
+  { id: 'pricing', label: 'Pricing Rules', Icon: SlidersHorizontal, module: 'pricing-rules' },
+]
+const scheduleItem: NavigationItem = { id: 'schedule', label: 'My Schedule', Icon: CalendarDays }
+const notificationsItem: NavigationItem = { id: 'notifications', label: 'Notifications', Icon: Bell }
 
 export default function App() {
   const [activeScreen, setActiveScreen] = useState<ScreenId>('overview')
@@ -94,15 +95,29 @@ export default function App() {
   const designSubmissions = useAdminStore(state => state.designSubmissions)
   const orders = useAdminStore(state => state.orders)
   const assignmentEvents = useAdminStore(state => state.assignmentEvents)
+  const recommendations = useAdminStore(state => state.recommendations)
   const readNotificationIds = useAdminStore(state => state.readNotificationIds)
   const setViewAs = useAdminStore(state => state.setViewAs)
   const resetDemoData = useAdminStore(state => state.resetDemoData)
+  const applyDuePricingChange = useAdminStore(state => state.applyDuePricingChange)
+
+  // A scheduled price change takes effect once its time passes, even while the app stays open.
+  useEffect(() => {
+    applyDuePricingChange()
+    const timer = window.setInterval(() => applyDuePricingChange(), 30_000)
+    return () => window.clearInterval(timer)
+  }, [applyDuePricingChange])
   const employeeView = viewAs.startsWith('employee:')
-  const visibleNavigation = employeeView ? employeeNavigation : navigation
+  const accessTo = (item: NavigationItem): AccessLevel =>
+    item.module ? accessFor(viewAs, employees, item.module) : 'edit'
+  const visibleNavigation: NavigationItem[] = employeeView
+    ? [scheduleItem, ...adminNavigation.filter(item => accessTo(item) !== 'none'), notificationsItem]
+    : [...adminNavigation, notificationsItem]
   const visibleScreen = visibleNavigation.some(item => item.id === activeScreen)
     ? activeScreen
     : employeeView ? 'schedule' : 'overview'
   const currentNavigation = visibleNavigation.find(item => item.id === visibleScreen)!
+  const readOnly = accessTo(currentNavigation) === 'view'
   const sidebarWidth = sidebarCollapsed ? 60 : 224
   const unreadCount = generateNotifications({
     viewAs,
@@ -112,6 +127,7 @@ export default function App() {
     orders,
     employees,
     assignmentEvents,
+    recommendations,
   }).filter(item => !readNotificationIds.includes(item.id)).length
   const selectedEmployeeId = viewAs.startsWith('employee:')
     ? viewAs.slice('employee:'.length)
@@ -119,7 +135,7 @@ export default function App() {
 
   const handleViewAs = (nextView: string) => {
     let next: ViewAs
-    if (nextView === 'Admin' || nextView === 'Manager') {
+    if (nextView === 'Admin') {
       next = nextView
     } else if (nextView.startsWith('employee:')) {
       next = `employee:${nextView.slice('employee:'.length)}`
@@ -348,10 +364,9 @@ export default function App() {
                     color: colors.foreground,
                     fontSize: 12,
                   }}>
-                    <option value="Admin">Admin</option>
-                    <option value="Manager">Manager</option>
+                    <option value="Admin">Admin (full access)</option>
                     {employees.map(employee => (
-                      <option key={employee.id} value={`employee:${employee.id}`}>{employee.name} ({employee.role})</option>
+                      <option key={employee.id} value={`employee:${employee.id}`}>{employee.name} ({displayTitle(employee)}{employee.status === 'Active' ? '' : `, ${employee.status}`})</option>
                     ))}
                   </select>
                 </label>
@@ -370,7 +385,14 @@ export default function App() {
           </div>
         </header>
         <main style={{ flex: 1, overflowY: 'auto', padding: '28px 28px' }}>
-          {screenContent}
+          {readOnly && (
+            <p role="note" style={{ padding: '8px 12px', marginBottom: 16, borderRadius: 6, background: '#FFF8E6', border: '1px solid #E9D49A', color: '#7A5A10', fontSize: 12 }}>
+              View only: you can see this screen but your access does not allow changes. Ask an administrator to change your module access in User Management.
+            </p>
+          )}
+          <ReadOnlyContext.Provider value={readOnly}>
+            {screenContent}
+          </ReadOnlyContext.Provider>
         </main>
       </div>
     </div>

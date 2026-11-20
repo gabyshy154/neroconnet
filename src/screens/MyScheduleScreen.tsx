@@ -1,5 +1,6 @@
 import { DEMO_TODAY } from '../config'
 import { EmptyState, ScreenCard, ScreenFeedback, ScreenTitle, screenColors } from '../components/ScreenUI'
+import { orderStatus } from '../lib/admin'
 import { useAdminStore } from '../store/adminStore'
 
 export default function MyScheduleScreen() {
@@ -55,7 +56,7 @@ export default function MyScheduleScreen() {
                       <th scope="row" style={{ padding: 9, textAlign: 'left', color: screenColors.foreground, fontSize: 12, fontWeight: 600 }}>{order.id}</th>
                       <td style={{ padding: 9, color: screenColors.foreground, fontSize: 12 }}>{order.customer}</td>
                       <td style={{ padding: 9, color: screenColors.foreground, fontSize: 12 }}>{order.deadline}</td>
-                      <td style={{ padding: 9, color: screenColors.foreground, fontSize: 12 }}>{order.stage ?? 'Not assigned'}</td>
+                      <td style={{ padding: 9, color: screenColors.foreground, fontSize: 12 }}>{orderStatus(order) === 'In Production' ? order.stage : orderStatus(order)}</td>
                       <td style={{ padding: 9, color: overdue ? '#9B3526' : '#276749', fontSize: 12, fontWeight: 600 }}>{overdue ? 'Overdue' : 'On schedule'}</td>
                     </tr>
                   )

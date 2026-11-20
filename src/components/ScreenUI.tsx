@@ -1,4 +1,10 @@
-import type { ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
+
+/**
+ * True while the viewer has View only access to the current screen (REQ-4.13-08). Action
+ * buttons disable themselves; buttons that only show or download data opt out with allowReadOnly.
+ */
+export const ReadOnlyContext = createContext(false)
 
 const colors = {
   foreground: '#1C1C18',
@@ -93,13 +99,18 @@ export function ScreenButton({
   variant = 'primary',
   disabled = false,
   type = 'button',
+  allowReadOnly = false,
 }: {
   children: ReactNode
   onClick?: () => void
   variant?: 'primary' | 'secondary' | 'danger'
   disabled?: boolean
   type?: 'button' | 'submit'
+  /** For buttons that only show or download data, which View only users may still use. */
+  allowReadOnly?: boolean
 }) {
+  const readOnly = useContext(ReadOnlyContext) && !allowReadOnly
+  disabled = disabled || readOnly
   const variantStyle = {
     primary: { background: colors.accent, color: '#fff', border: '1px solid #4A5A38' },
     secondary: { background: colors.card, color: colors.foreground, border: `1px solid ${colors.border}` },
@@ -110,6 +121,7 @@ export function ScreenButton({
       type={type}
       onClick={onClick}
       disabled={disabled}
+      title={readOnly ? 'View only: you do not have edit access to this module.' : undefined}
       style={{
         ...variantStyle,
         borderRadius: 6,
